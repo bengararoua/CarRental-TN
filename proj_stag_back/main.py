@@ -99,7 +99,8 @@ def user_response(user: User):
         "id": user.id,
         "username": user.username,
         "email": user.email,
-        "role": user.role
+        "role": user.role,
+        "created_at": user.created_at.isoformat() if user.created_at else None
     }
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
@@ -1696,4 +1697,3 @@ async def chat_with_assistant(
         db.rollback()  # Annule la transaction en cas d'erreur
         print(f"❌ Erreur lors de l'interaction avec l'assistant: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
-

@@ -67,11 +67,12 @@ class _LoginScreenState extends State<LoginScreen> {
         print('👤 Utilisateur: $username');
         print('🔑 Rôle: $userRole');
         print('🎟️ Token: ${token.substring(0, 20)}...');
+        print('📅 Date création: ${user['created_at']}');
 
-        // Utilise le Provider pour enregistrer le token et le rôle dans l'état global
-        Provider.of<VehiclesProvider>(context, listen: false).setToken(
+        // Utilise le Provider pour enregistrer toutes les données utilisateur (y compris created_at)
+        Provider.of<VehiclesProvider>(context, listen: false).setUser(
+          user,
           token,
-          role: userRole,
         );
 
         // Détermine le message de bienvenue selon le rôle de l'utilisateur
