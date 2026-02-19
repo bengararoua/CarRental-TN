@@ -29,7 +29,8 @@ class _BookingScreenState extends State<BookingScreen> {
   // Contrôleur pour gérer le défilement de la page (scroll)
   final ScrollController _scrollController = ScrollController();
   // Nœud de focus pour capturer les événements clavier (touches fléchées)
-  final FocusNode _focusNode = FocusNode();
+  // FIX : on utilise un FocusNode dédié au scroll, séparé des TextFields
+  final FocusNode _scrollFocusNode = FocusNode();
 
   // Contrôleurs pour chaque champ de texte du formulaire (lisent/écrivent la valeur du champ)
   final _nameController = TextEditingController();    // Pour le nom complet
@@ -104,31 +105,35 @@ class _BookingScreenState extends State<BookingScreen> {
     _returnDateController.dispose();
     // Libère le contrôleur de défilement
     _scrollController.dispose();
-    // Libère le nœud de focus
-    _focusNode.dispose();
+    // Libère le nœud de focus dédié au scroll
+    _scrollFocusNode.dispose();
     super.dispose(); // Appelle la méthode dispose de la classe parent
   }
 
-  // Fonction pour faire défiler la page vers le haut (appelée par la touche flèche haut)
+  // FIX 1 : _scrollUp avec clamp pour éviter une position négative
+  // (important surtout avec BouncingScrollPhysics qui peut causer un rebond indésirable)
   void _scrollUp() {
-    // Vérifie si le contrôleur est attaché à un widget (évite les erreurs)
     if (_scrollController.hasClients) {
-      // Anime le défilement vers le haut de 150 pixels
       _scrollController.animateTo(
-        _scrollController.offset - 150,
-        duration: Duration(milliseconds: 200), // Durée de l'animation : 200 ms
-        curve: Curves.easeOut, // Courbe d'animation pour un effet fluide
+        (_scrollController.offset - 150).clamp(
+          0.0,
+          _scrollController.position.maxScrollExtent,
+        ),
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
       );
     }
   }
 
-  // Fonction pour faire défiler la page vers le bas (appelée par la touche flèche bas)
+  // FIX 1 : _scrollDown avec clamp pour ne pas dépasser la fin du contenu
   void _scrollDown() {
     if (_scrollController.hasClients) {
-      // Anime le défilement vers le bas de 150 pixels
       _scrollController.animateTo(
-        _scrollController.offset + 150,
-        duration: Duration(milliseconds: 200),
+        (_scrollController.offset + 150).clamp(
+          0.0,
+          _scrollController.position.maxScrollExtent,
+        ),
+        duration: const Duration(milliseconds: 200),
         curve: Curves.easeOut,
       );
     }
@@ -142,7 +147,7 @@ class _BookingScreenState extends State<BookingScreen> {
 
   // Calcule le nombre de jours de location en fonction des dates sélectionnées
   int _calculateDays() {
-    // En mode 1 jour, retourne toujours 1 
+    // En mode 1 jour, retourne toujours 1
     if (_singleDayMode) return 1;
 
     // Si les deux dates sont sélectionnées, calcule la différence en jours
@@ -172,41 +177,32 @@ class _BookingScreenState extends State<BookingScreen> {
   Future<void> _selectStartDate(BuildContext context) async {
     // Affiche le sélecteur de date avec showDatePicker
     final DateTime? picked = await showDatePicker(
-      context: context, // Contexte de l'interface (pour afficher le dialogue)
-      // Date initiale : aujourd'hui si aucune date n'est encore sélectionnée
+      context: context,
       initialDate: _startDate ?? DateTime.now(),
-      // Première date sélectionnable : aujourd'hui (on ne peut pas réserver dans le passé)
       firstDate: DateTime.now(),
-      // Dernière date sélectionnable : dans 365 jours (1 an)
       lastDate: DateTime.now().add(const Duration(days: 365)),
-      // Personnalisation du thème du sélecteur (sombre pour s'accorder avec l'app)
       builder: (context, child) {
         return Theme(
           data: ThemeData.dark().copyWith(
             colorScheme: const ColorScheme.dark(
-              primary: Colors.blue,   // Couleur principale (boutons, sélection)
-              surface: Color(0xFF2A2A2A), // Couleur de fond du sélecteur
+              primary: Colors.blue,
+              surface: Color(0xFF2A2A2A),
             ),
           ),
-          child: child!, // Passe le widget du sélecteur à Theme
+          child: child!,
         );
       },
     );
 
-    // Si l'utilisateur a sélectionné une date 
     if (picked != null) {
-      // Met à jour l'état du widget (rafraîchit l'interface)
       setState(() {
-        _startDate = picked; // Stocke la date sélectionnée
-        _pickupDateController.text = _formatDateForApi(picked); // Met à jour le champ texte
+        _startDate = picked;
+        _pickupDateController.text = _formatDateForApi(picked);
 
-        // Si on est en mode 1 jour, la date de fin = date de début + 1 jour
         if (_singleDayMode) {
           _endDate = picked.add(const Duration(days: 1));
           _returnDateController.text = _formatDateForApi(_endDate!);
-        }
-        // Sinon (mode plusieurs jours), si la date de fin est avant la nouvelle date de début, on la réinitialise
-        else if (_endDate != null && _endDate!.isBefore(picked)) {
+        } else if (_endDate != null && _endDate!.isBefore(picked)) {
           _endDate = null;
           _returnDateController.text = '';
         }
@@ -216,15 +212,11 @@ class _BookingScreenState extends State<BookingScreen> {
 
   // Ouvre un sélecteur de date pour choisir la date de fin de location
   Future<void> _selectEndDate(BuildContext context) async {
-    // En mode 1 jour, on ne permet pas de sélectionner la date de fin (elle est calculée automatiquement)
     if (_singleDayMode) return;
 
-    // Affiche le sélecteur de date
     final DateTime? picked = await showDatePicker(
       context: context,
-      // Date initiale : date de fin existante, ou date de début + 1 jour, ou aujourd'hui + 1 jour
       initialDate: _endDate ?? (_startDate ?? DateTime.now()).add(const Duration(days: 1)),
-      // Première date sélectionnable : la date de début (ou aujourd'hui si pas de date de début)
       firstDate: _startDate ?? DateTime.now(),
       lastDate: DateTime.now().add(const Duration(days: 365)),
       builder: (context, child) {
@@ -242,18 +234,16 @@ class _BookingScreenState extends State<BookingScreen> {
 
     if (picked != null) {
       setState(() {
-        _endDate = picked; // Stocke la date de fin sélectionnée
-        _returnDateController.text = _formatDateForApi(picked); // Met à jour le champ texte
+        _endDate = picked;
+        _returnDateController.text = _formatDateForApi(picked);
       });
     }
   }
 
   // Ouvre un sélecteur d'heure natif pour choisir l'heure du rendez-vous
   Future<void> _selectMeetingTime(BuildContext context) async {
-    // Affiche le sélecteur d'heure avec showTimePicker
     final TimeOfDay? picked = await showTimePicker(
       context: context,
-      // Heure initiale : 9h00 (valeur par défaut)
       initialTime: const TimeOfDay(hour: 9, minute: 0),
       builder: (context, child) {
         return Theme(
@@ -270,26 +260,23 @@ class _BookingScreenState extends State<BookingScreen> {
 
     if (picked != null) {
       setState(() {
-        _meetingTime = picked; // Stocke l'heure sélectionnée
+        _meetingTime = picked;
       });
     }
   }
 
   // Méthode appelée quand l'utilisateur appuie sur le bouton "Confirmer la réservation"
   Future<void> _submitBooking() async {
-    // Étape 1 : Validation du formulaire (vérifie que tous les champs obligatoires sont valides)
     if (!_formKey.currentState!.validate()) {
-      // Affiche un message d'erreur en bas de l'écran (snackbar)
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Veuillez remplir tous les champs obligatoires'),
-          backgroundColor: Colors.red, // Couleur rouge pour l'erreur
+          backgroundColor: Colors.red,
         ),
       );
-      return; // Arrête l'exécution de la méthode
+      return;
     }
 
-    // Étape 2 : Validation de l'heure du rendez-vous (doit être sélectionnée)
     if (_meetingTime == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -300,7 +287,6 @@ class _BookingScreenState extends State<BookingScreen> {
       return;
     }
 
-    // Étape 3 : Validation de la date de début (obligatoire)
     if (_startDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -311,7 +297,6 @@ class _BookingScreenState extends State<BookingScreen> {
       return;
     }
 
-    // Étape 4 : En mode plusieurs jours, validation de la date de fin (obligatoire)
     if (!_singleDayMode && _endDate == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -322,10 +307,8 @@ class _BookingScreenState extends State<BookingScreen> {
       return;
     }
 
-    // Étape 5 : Récupération du token d'authentification depuis le provider
     final token = Provider.of<VehiclesProvider>(context, listen: false).token;
 
-    // Si l'utilisateur n'est pas connecté (token null), affiche une erreur
     if (token == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -336,48 +319,36 @@ class _BookingScreenState extends State<BookingScreen> {
       return;
     }
 
-    // Étape 6 : Active l'indicateur de chargement
     setState(() => _isLoading = true);
 
     try {
-      // Prépare les dates au format API
       String pickupDate = _formatDateForApi(_startDate!);
-      // Note : en mode 1 jour, _endDate est déjà défini comme _startDate + 1 jour
       String returnDate = _formatDateForApi(_endDate!);
 
-      // Construit l'objet de données à envoyer à l'API
       final bookingData = {
-        'car_id': widget.vehicle['id'],      // ID du véhicule à réserver
-        'full_name': _nameController.text.trim(), // Nom complet de l'utilisateur
-        'pickup_date': pickupDate,           // Date de début formatée
-        'return_date': returnDate,           // Date de fin formatée
-        'total_price': _calculateTotalPrice(), // Prix total calculé
+        'car_id': widget.vehicle['id'],
+        'full_name': _nameController.text.trim(),
+        'pickup_date': pickupDate,
+        'return_date': returnDate,
+        'total_price': _calculateTotalPrice(),
       };
 
-      // Log de débogage (visible dans la console)
       print('📤 Envoi des données de réservation: $bookingData');
 
-      // Appel à l'API via AuthService pour créer la réservation
       final result = await AuthService.addBooking(bookingData, token);
 
-      // Vérifie que le widget est toujours monté (pour éviter d'appeler setState sur un widget détruit)
       if (!mounted) return;
 
-      // Si l'API a répondu avec success: true
       if (result['success']) {
-        // Affiche un message de succès
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(result['message'] ?? "Réservation envoyée ! En attente de confirmation."),
-            backgroundColor: Colors.green, // Couleur verte pour le succès
-            duration: const Duration(seconds: 3), // Durée d'affichage : 3 secondes
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
           ),
         );
-
-        // Retourne à l'écran précédent (détail du véhicule ou liste)
         Navigator.pop(context);
       } else {
-        // Si l'API a répondu avec une erreur, affiche le message d'erreur
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(result['message'] ?? "Erreur lors de la réservation"),
@@ -387,11 +358,9 @@ class _BookingScreenState extends State<BookingScreen> {
         );
       }
     } catch (e) {
-      // Capture toute exception (erreur réseau, format de données, etc.)
       print('❌ Exception lors de la réservation: $e');
       if (!mounted) return;
 
-      // Affiche l'erreur dans une snackbar
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text("Erreur inattendue: $e"),
@@ -400,7 +369,6 @@ class _BookingScreenState extends State<BookingScreen> {
         ),
       );
     } finally {
-      // Désactive l'indicateur de chargement dans tous les cas (succès ou erreur)
       if (mounted) setState(() => _isLoading = false);
     }
   }
@@ -408,257 +376,228 @@ class _BookingScreenState extends State<BookingScreen> {
   // Méthode principale de construction de l'interface utilisateur (UI)
   @override
   Widget build(BuildContext context) {
-    // Scaffold est la structure de base d'un écran Material Design (AppBar, Body, etc.)
     return Scaffold(
-      backgroundColor: const Color(0xFF1A1A1A), // Fond noir (thème sombre)
-      // Barre d'application en haut de l'écran
+      backgroundColor: const Color(0xFF1A1A1A),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1A1A1A), // Même fond que le body
-        elevation: 0, // Pas d'ombre sous la barre
-        // Bouton de retour à gauche (flèche)
+        backgroundColor: const Color(0xFF1A1A1A),
+        elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 20),
-          onPressed: () => Navigator.pop(context), // Retourne à l'écran précédent
+          onPressed: () => Navigator.pop(context),
         ),
-        // Titre de la barre : "Réserver [nom du véhicule]"
         title: Text(
           'Réserver ${widget.vehicle['name']}',
           style: const TextStyle(color: Colors.white, fontSize: 18),
         ),
       ),
-      // Corps de l'écran (contenu principal)
       body: SafeArea(
-        // SafeArea évite que le contenu soit masqué par la encoche ou les barres système
-        child: RawKeyboardListener(
-          // Écoute les événements clavier (touches fléchées pour le défilement)
-          focusNode: _focusNode,
-          autofocus: true, // Donne automatiquement le focus à ce widget
-          onKey: (event) {
-            // Quand une touche est enfoncée
-            if (event is RawKeyDownEvent) {
-              // Flèche haut : défile vers le haut
-              if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
-                _scrollUp();
-              }
-              // Flèche bas : défile vers le bas
-              if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
-                _scrollDown();
-              }
-            }
+        // FIX 2 : Utilisation de KeyboardListener (non déprécié) à la place de RawKeyboardListener.
+        // On enveloppe avec un GestureDetector pour récupérer le focus scroll
+        // uniquement quand l'utilisateur tape en dehors des TextFields,
+        // évitant ainsi le conflit avec les touches fléchées dans les champs de saisie.
+        child: GestureDetector(
+          onTap: () {
+            // Quand l'utilisateur tape en dehors d'un TextField :
+            // - on ferme le clavier
+            // - on redonne le focus au nœud de scroll pour que les flèches fonctionnent
+            FocusScope.of(context).unfocus();
+            _scrollFocusNode.requestFocus();
           },
-          child: SingleChildScrollView(
-            // Permet de faire défiler tout le contenu verticalement
-            controller: _scrollController, // Contrôleur pour le défilement programmatique
-            physics: const BouncingScrollPhysics(), // Effet de rebond à la fin du scroll
-            padding: const EdgeInsets.all(16), // Marge intérieure de 16 pixels sur tous les côtés
-            child: Form(
-              // Widget Form qui regroupe tous les champs et permet la validation
-              key: _formKey, // Clé globale pour accéder à l'état du formulaire
-              child: Column(
-                // Colonne principale qui empile tous les widgets enfants verticalement
-                crossAxisAlignment: CrossAxisAlignment.start, // Aligne les enfants à gauche
-                children: [
-                  // Carte qui affiche les informations du véhicule (image, nom, prix)
-                  _buildVehicleCard(),
+          child: KeyboardListener(
+            focusNode: _scrollFocusNode,
+            // autofocus: false pour ne pas voler le focus des TextFields au démarrage
+            autofocus: false,
+            onKeyEvent: (KeyEvent event) {
+              // FIX 2 : On n'intercepte les flèches QUE si aucun TextField n'a le focus,
+              // c'est-à-dire uniquement quand _scrollFocusNode est le focus primaire.
+              if (event is KeyDownEvent) {
+                if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+                  _scrollUp();
+                } else if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+                  _scrollDown();
+                }
+              }
+            },
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildVehicleCard(),
 
-                  const SizedBox(height: 24), // Espacement vertical de 24 pixels
+                    const SizedBox(height: 24),
 
-                  // Titre de section "Informations personnelles"
-                  _buildSectionTitle('Informations personnelles'),
-                  const SizedBox(height: 12),
+                    _buildSectionTitle('Informations personnelles'),
+                    const SizedBox(height: 12),
 
-                  // Champ de texte pour le nom complet
-                  _buildTextField(
-                    controller: _nameController,
-                    label: 'Nom complet',
-                    icon: Icons.person_outline,
-                    validator: (v) => v!.isEmpty ? 'Champ requis' : null, // Validation : ne doit pas être vide
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Champ de texte pour le téléphone
-                  _buildTextField(
-                    controller: _phoneController,
-                    label: 'Téléphone',
-                    icon: Icons.phone_outlined,
-                    keyboardType: TextInputType.phone, // Ouvre le clavier numérique
-                    validator: (v) => v!.length < 8 ? 'Numéro invalide' : null, // Validation : au moins 8 caractères
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Champ de texte pour l'email
-                  _buildTextField(
-                    controller: _emailController,
-                    label: 'Email',
-                    icon: Icons.email_outlined,
-                    keyboardType: TextInputType.emailAddress, // Clavier avec @
-                    validator: (v) => v!.contains('@') ? null : 'Email invalide', // Validation : doit contenir @
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Champ de texte pour l'adresse
-                  _buildTextField(
-                    controller: _addressController,
-                    label: 'Adresse',
-                    icon: Icons.location_on_outlined,
-                    validator: (v) => v!.isEmpty ? 'Champ requis' : null,
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Titre de section "Durée de location"
-                  _buildSectionTitle('Durée de location'),
-                  const SizedBox(height: 12),
-
-                  // Case à cocher pour basculer entre mode 1 jour / plusieurs jours
-                  _buildCheckbox(
-                    title: 'Location pour plusieurs jours',
-                    // La valeur est l'inverse de _singleDayMode (car checkbox cochée = plusieurs jours)
-                    value: !_singleDayMode,
-                    onChanged: (v) {
-                      setState(() {
-                        _singleDayMode = !v!; // Inverse la valeur actuelle
-                        // Si on repasse en mode 1 jour et qu'une date de début est sélectionnée
-                        if (_singleDayMode && _startDate != null) {
-                          // Calcule automatiquement la date de fin (début + 1 jour)
-                          _endDate = _startDate!.add(const Duration(days: 1));
-                          _returnDateController.text = _formatDateForApi(_endDate!);
-                        }
-                      });
-                    },
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Bouton pour sélectionner la date de début (ou date de location en mode 1 jour)
-                  _buildDateButton(
-                    label: _singleDayMode ? 'Date de location' : 'Date de début',
-                    date: _startDate,
-                    onTap: () => _selectStartDate(context),
-                  ),
-
-                  const SizedBox(height: 12),
-                  // Bouton pour sélectionner la date de fin (désactivé en mode 1 jour)
-                  _buildDateButton(
-                    label: 'Date de fin',
-                    date: _endDate,
-                    onTap: () => _selectEndDate(context),
-                    isReturnDate: true, // Indique que c'est la date de retour (affichage différent)
-                    singleDayMode: _singleDayMode, // Passe le mode pour désactiver le bouton si nécessaire
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // Affichage de la durée totale calculée (nombre de jours)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF2A2A2A), // Fond gris foncé
-                      borderRadius: BorderRadius.circular(8), // Coins arrondis
+                    _buildTextField(
+                      controller: _nameController,
+                      label: 'Nom complet',
+                      icon: Icons.person_outline,
+                      validator: (v) => v!.isEmpty ? 'Champ requis' : null,
                     ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween, // Éspace les éléments au maximum
+                    const SizedBox(height: 16),
+
+                    _buildTextField(
+                      controller: _phoneController,
+                      label: 'Téléphone',
+                      icon: Icons.phone_outlined,
+                      keyboardType: TextInputType.phone,
+                      validator: (v) => v!.length < 8 ? 'Numéro invalide' : null,
+                    ),
+                    const SizedBox(height: 16),
+
+                    _buildTextField(
+                      controller: _emailController,
+                      label: 'Email',
+                      icon: Icons.email_outlined,
+                      keyboardType: TextInputType.emailAddress,
+                      validator: (v) => v!.contains('@') ? null : 'Email invalide',
+                    ),
+                    const SizedBox(height: 16),
+
+                    _buildTextField(
+                      controller: _addressController,
+                      label: 'Adresse',
+                      icon: Icons.location_on_outlined,
+                      validator: (v) => v!.isEmpty ? 'Champ requis' : null,
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    _buildSectionTitle('Durée de location'),
+                    const SizedBox(height: 12),
+
+                    _buildCheckbox(
+                      title: 'Location pour plusieurs jours',
+                      value: !_singleDayMode,
+                      onChanged: (v) {
+                        setState(() {
+                          _singleDayMode = !v!;
+                          if (_singleDayMode && _startDate != null) {
+                            _endDate = _startDate!.add(const Duration(days: 1));
+                            _returnDateController.text = _formatDateForApi(_endDate!);
+                          }
+                        });
+                      },
+                    ),
+
+                    const SizedBox(height: 16),
+
+                    _buildDateButton(
+                      label: _singleDayMode ? 'Date de location' : 'Date de début',
+                      date: _startDate,
+                      onTap: () => _selectStartDate(context),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    _buildDateButton(
+                      label: 'Date de fin',
+                      date: _endDate,
+                      onTap: () => _selectEndDate(context),
+                      isReturnDate: true,
+                      singleDayMode: _singleDayMode,
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2A2A2A),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Durée totale:', style: TextStyle(color: Colors.white70)),
+                          Text(
+                            '${_calculateDays()} jour${_calculateDays() > 1 ? 's' : ''}',
+                            style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    _buildSectionTitle('Heure et lieu de prise du véhicule'),
+                    const SizedBox(height: 12),
+
+                    Row(
                       children: [
-                        const Text('Durée totale:', style: TextStyle(color: Colors.white70)),
-                        Text(
-                          '${_calculateDays()} jour${_calculateDays() > 1 ? 's' : ''}', // Ajoute un 's' au pluriel
-                          style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold),
-                        ),
+                        Expanded(child: _buildTimePickerButton()),
+                        const SizedBox(width: 12),
+                        Expanded(child: _buildLocationDropdown()),
                       ],
                     ),
-                  ),
 
-                  const SizedBox(height: 24),
+                    const SizedBox(height: 24),
 
-                  // Titre de section "Heure et lieu de prise du véhicule"
-                  _buildSectionTitle('Heure et lieu de prise du véhicule'),
-                  const SizedBox(height: 12),
+                    _buildSectionTitle('Options supplémentaires'),
+                    const SizedBox(height: 12),
 
-                  // Ligne qui contient le sélecteur d'heure et le menu déroulant pour le lieu
-                  Row(
-                    children: [
-                      // Sélecteur d'heure (première moitié de la ligne)
-                      Expanded(
-                        child: _buildTimePickerButton(), // Version compacte du bouton d'heure
-                      ),
-                      const SizedBox(width: 12), // Espacement horizontal de 12 pixels
-                      // Menu déroulant pour le lieu (seconde moitié de la ligne)
-                      Expanded(
-                        child: _buildLocationDropdown(),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Titre de section "Options supplémentaires"
-                  _buildSectionTitle('Options supplémentaires'),
-                  const SizedBox(height: 12),
-
-                  // Case à cocher pour l'option chauffeur
-                  _buildCheckbox(
-                    title: 'Chauffeur (+50 TND/jour)',
-                    value: _needsDriver,
-                    onChanged: (v) => setState(() => _needsDriver = v!), // Met à jour l'état et rafraîchit l'UI
-                  ),
-
-                  // Case à cocher pour l'option GPS
-                  _buildCheckbox(
-                    title: 'GPS (+5 TND/jour)',
-                    value: _needsGPS,
-                    onChanged: (v) => setState(() => _needsGPS = v!),
-                  ),
-
-                  // Case à cocher pour l'option siège enfant
-                  _buildCheckbox(
-                    title: 'Siège enfant (+3 TND/jour)',
-                    value: _needsChildSeat,
-                    onChanged: (v) => setState(() => _needsChildSeat = v!),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Titre de section "Notes (optionnel)"
-                  _buildSectionTitle('Notes (optionnel)'),
-                  const SizedBox(height: 12),
-
-                  // Champ de texte multiligne pour les notes
-                  _buildTextField(
-                    controller: _notesController,
-                    label: 'Remarques ou demandes spéciales',
-                    icon: Icons.note_outlined,
-                    maxLines: 3, // Permet d'écrire sur plusieurs lignes
-                    validator: null, // Pas de validation car optionnel
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Récapitulatif du prix (détail du calcul)
-                  _buildPriceSummary(),
-
-                  const SizedBox(height: 24),
-
-                  // Bouton de confirmation de réservation (largeur maximale)
-                  SizedBox(
-                    width: double.infinity, // Prend toute la largeur disponible
-                    height: 54, // Hauteur fixe
-                    child: ElevatedButton(
-                      onPressed: _isLoading ? null : _submitBooking, // Désactivé pendant le chargement
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue, // Couleur de fond bleue
-                        disabledBackgroundColor: Colors.blue.withOpacity(0.5), // Bleu semi-transparent si désactivé
-                      ),
-                      child: _isLoading
-                          ? const CircularProgressIndicator(color: Colors.white) // Spinner de chargement
-                          : const Text(
-                              'Confirmer la réservation',
-                              style: TextStyle(color: Colors.white, fontSize: 16),
-                            ),
+                    _buildCheckbox(
+                      title: 'Chauffeur (+50 TND/jour)',
+                      value: _needsDriver,
+                      onChanged: (v) => setState(() => _needsDriver = v!),
                     ),
-                  ),
+                    _buildCheckbox(
+                      title: 'GPS (+5 TND/jour)',
+                      value: _needsGPS,
+                      onChanged: (v) => setState(() => _needsGPS = v!),
+                    ),
+                    _buildCheckbox(
+                      title: 'Siège enfant (+3 TND/jour)',
+                      value: _needsChildSeat,
+                      onChanged: (v) => setState(() => _needsChildSeat = v!),
+                    ),
 
-                  const SizedBox(height: 24), // Espacement final en bas de la page
-                ],
+                    const SizedBox(height: 24),
+
+                    _buildSectionTitle('Notes (optionnel)'),
+                    const SizedBox(height: 12),
+
+                    _buildTextField(
+                      controller: _notesController,
+                      label: 'Remarques ou demandes spéciales',
+                      icon: Icons.note_outlined,
+                      maxLines: 3,
+                      validator: null,
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    _buildPriceSummary(),
+
+                    const SizedBox(height: 24),
+
+                    SizedBox(
+                      width: double.infinity,
+                      height: 54,
+                      child: ElevatedButton(
+                        onPressed: _isLoading ? null : _submitBooking,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.blue,
+                          disabledBackgroundColor: Colors.blue.withOpacity(0.5),
+                        ),
+                        child: _isLoading
+                            ? const CircularProgressIndicator(color: Colors.white)
+                            : const Text(
+                                'Confirmer la réservation',
+                                style: TextStyle(color: Colors.white, fontSize: 16),
+                              ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+                  ],
+                ),
               ),
             ),
           ),
@@ -671,32 +610,28 @@ class _BookingScreenState extends State<BookingScreen> {
   Widget _buildVehicleCard() {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF2A2A2A), // Fond gris foncé
-        borderRadius: BorderRadius.circular(12), // Coins arrondis
+        color: const Color(0xFF2A2A2A),
+        borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
-          // Image du véhicule (à gauche)
           ClipRRect(
-            borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)), // Coins arrondis à gauche seulement
+            borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
             child: Image.network(
-              widget.vehicle['image'], // URL de l'image (depuis les données du véhicule)
-              width: 120, // Largeur fixe
-              height: 100, // Hauteur fixe
-              fit: BoxFit.cover, // Remplit le cadre sans déformer l'image
-              cacheWidth: 240, // Optimisation : cache l'image en double résolution pour les écrans HD
+              widget.vehicle['image'],
+              width: 120,
+              height: 100,
+              fit: BoxFit.cover,
+              cacheWidth: 240,
               cacheHeight: 200,
-              // Builder pour afficher un indicateur de chargement pendant le téléchargement
               loadingBuilder: (context, child, loadingProgress) {
-                if (loadingProgress == null) return child; // Si chargé, affiche l'image
-                // Sinon, affiche un container gris avec un spinner de progression
+                if (loadingProgress == null) return child;
                 return Container(
                   width: 120,
                   height: 100,
                   color: const Color(0xFF3A3A3A),
                   child: Center(
                     child: CircularProgressIndicator(
-                      // Calcule la progression si le poids total est connu
                       value: loadingProgress.expectedTotalBytes != null
                           ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
                           : null,
@@ -704,23 +639,20 @@ class _BookingScreenState extends State<BookingScreen> {
                   ),
                 );
               },
-              // Builder en cas d'erreur de chargement de l'image
               errorBuilder: (context, error, stackTrace) => Container(
                 width: 120,
                 height: 100,
                 color: const Color(0xFF3A3A3A),
-                child: const Icon(Icons.car_repair, color: Colors.white), // Icône de remplacement
+                child: const Icon(Icons.car_repair, color: Colors.white),
               ),
             ),
           ),
-          // Partie texte de la carte (à droite de l'image)
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.all(12), // Marge intérieure de 12 pixels
+              padding: const EdgeInsets.all(12),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start, // Alignement du texte à gauche
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Nom du véhicule
                   Text(
                     widget.vehicle['name'],
                     style: const TextStyle(
@@ -730,13 +662,11 @@ class _BookingScreenState extends State<BookingScreen> {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  // Catégorie du véhicule (ex: SUV, Berline)
                   Text(
                     widget.vehicle['category'],
                     style: const TextStyle(color: Colors.blue, fontSize: 12),
                   ),
                   const SizedBox(height: 8),
-                  // Prix par jour
                   Text(
                     '${widget.vehicle['price']} TND / jour',
                     style: const TextStyle(
@@ -776,22 +706,28 @@ class _BookingScreenState extends State<BookingScreen> {
     int maxLines = 1,
   }) {
     return TextFormField(
-      controller: controller, // Lie le contrôleur au champ
-      keyboardType: keyboardType, // Type de clavier (ex: numérique, email)
-      maxLines: maxLines, // Nombre de lignes (1 par défaut, >1 pour zone de texte)
-      style: const TextStyle(color: Colors.white), // Couleur du texte saisi
+      controller: controller,
+      keyboardType: keyboardType,
+      maxLines: maxLines,
+      style: const TextStyle(color: Colors.white),
+      // FIX 2 : quand un TextField perd le focus, on le redonne au nœud de scroll
+      // pour que les flèches reprennent le contrôle du scroll immédiatement après la saisie.
+      onEditingComplete: () {
+        FocusScope.of(context).unfocus();
+        _scrollFocusNode.requestFocus();
+      },
       decoration: InputDecoration(
-        labelText: label, // Texte du label (au-dessus quand en focus)
-        labelStyle: const TextStyle(color: Colors.white70), // Couleur du label
-        prefixIcon: Icon(icon, color: Colors.white70), // Icône à gauche du champ
-        filled: true, // Remplit le fond du champ
-        fillColor: const Color(0xFF2A2A2A), // Couleur de fond gris foncé
+        labelText: label,
+        labelStyle: const TextStyle(color: Colors.white70),
+        prefixIcon: Icon(icon, color: Colors.white70),
+        filled: true,
+        fillColor: const Color(0xFF2A2A2A),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12), // Coins arrondis
-          borderSide: BorderSide.none, // Pas de bordure visible
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide.none,
         ),
       ),
-      validator: validator, // Fonction de validation (peut retourner un message d'erreur)
+      validator: validator,
     );
   }
 
@@ -804,7 +740,6 @@ class _BookingScreenState extends State<BookingScreen> {
     bool singleDayMode = false,
   }) {
     return GestureDetector(
-      // Désactive le clic si c'est la date de retour en mode 1 jour
       onTap: isReturnDate && singleDayMode ? null : onTap,
       child: Container(
         padding: const EdgeInsets.all(16),
@@ -815,7 +750,6 @@ class _BookingScreenState extends State<BookingScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Label (texte plus petit et gris)
             Text(
               label,
               style: TextStyle(
@@ -826,20 +760,18 @@ class _BookingScreenState extends State<BookingScreen> {
             const SizedBox(height: 8),
             Row(
               children: [
-                // Icône calendrier (grisée si désactivée)
                 Icon(
                   Icons.calendar_today,
                   color: isReturnDate && singleDayMode ? Colors.grey : Colors.blue,
                   size: 18,
                 ),
                 const SizedBox(width: 8),
-                // Texte affichant la date ou "Sélectionner"
                 Text(
                   date == null
                       ? 'Sélectionner'
                       : isReturnDate && singleDayMode
-                          ? 'Calculée automatiquement' // Texte spécial pour date de retour en mode 1 jour
-                          : '${date.day}/${date.month}/${date.year}', // Format jour/mois/année
+                          ? 'Calculée automatiquement'
+                          : '${date.day}/${date.month}/${date.year}',
                   style: TextStyle(
                     color: isReturnDate && singleDayMode ? Colors.grey : Colors.white,
                     fontSize: 14,
@@ -879,7 +811,7 @@ class _BookingScreenState extends State<BookingScreen> {
                 Text(
                   _meetingTime == null
                       ? 'Sélectionner'
-                      : _meetingTime!.format(context), // Formate l'heure selon les paramètres régionaux
+                      : _meetingTime!.format(context),
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 14,
@@ -903,13 +835,12 @@ class _BookingScreenState extends State<BookingScreen> {
         borderRadius: BorderRadius.circular(12),
       ),
       child: DropdownButton<String>(
-        value: _meetingLocation, // Lieu actuellement sélectionné
-        isExpanded: true, // Prend toute la largeur disponible
-        underline: const SizedBox(), // Supprime le trait de soulignement par défaut
-        dropdownColor: const Color(0xFF2A2A2A), // Fond du menu déroulant (gris foncé)
-        icon: const Icon(Icons.arrow_drop_down, color: Colors.white), // Icône de flèche
-        style: const TextStyle(color: Colors.white, fontSize: 14), // Style du texte des options
-        // Construit la liste des options à partir de la liste _locations
+        value: _meetingLocation,
+        isExpanded: true,
+        underline: const SizedBox(),
+        dropdownColor: const Color(0xFF2A2A2A),
+        icon: const Icon(Icons.arrow_drop_down, color: Colors.white),
+        style: const TextStyle(color: Colors.white, fontSize: 14),
         items: _locations.map((location) {
           return DropdownMenuItem(
             value: location,
@@ -923,10 +854,9 @@ class _BookingScreenState extends State<BookingScreen> {
           );
         }).toList(),
         onChanged: (value) {
-          // Quand l'utilisateur sélectionne une nouvelle option
           if (value != null) {
             setState(() {
-              _meetingLocation = value; // Met à jour le lieu sélectionné
+              _meetingLocation = value;
             });
           }
         },
@@ -941,28 +871,26 @@ class _BookingScreenState extends State<BookingScreen> {
     required Function(bool?) onChanged,
   }) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 8), // Marge en bas entre les options
+      margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: const Color(0xFF2A2A2A),
         borderRadius: BorderRadius.circular(12),
       ),
       child: CheckboxListTile(
         title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 14)),
-        value: value, // État actuel (coché ou non)
-        activeColor: Colors.blue, // Couleur de la case quand cochée
-        onChanged: onChanged, // Fonction appelée quand l'état change
-        controlAffinity: ListTileControlAffinity.leading, // Place la case à gauche du texte
+        value: value,
+        activeColor: Colors.blue,
+        onChanged: onChanged,
+        controlAffinity: ListTileControlAffinity.leading,
       ),
     );
   }
 
   // Méthode pour construire le récapitulatif du prix (détail et total)
   Widget _buildPriceSummary() {
-    // Calcule le prix de base (véhicule × nombre de jours)
     double basePrice = (widget.vehicle['price'] ?? 0).toDouble() * _calculateDays();
-    double extras = 0; // Initialise le total des extras
+    double extras = 0;
 
-    // Ajoute le coût de chaque option si elle est sélectionnée
     if (_needsDriver) extras += 50 * _calculateDays();
     if (_needsGPS) extras += 5 * _calculateDays();
     if (_needsChildSeat) extras += 3 * _calculateDays();
@@ -972,27 +900,23 @@ class _BookingScreenState extends State<BookingScreen> {
       decoration: BoxDecoration(
         color: const Color(0xFF2A2A2A),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blue, width: 1), // Bordure bleue pour mettre en évidence
+        border: Border.all(color: Colors.blue, width: 1),
       ),
       child: Column(
         children: [
-          // Ligne pour le prix de la location (base)
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Libellé avec le nombre de jours (pluriel si >1)
               Text(
                 'Location (${_calculateDays()} jour${_calculateDays() > 1 ? 's' : ''})',
                 style: const TextStyle(color: Colors.white70),
               ),
-              // Montant de la location
               Text(
                 '${basePrice.toInt()} TND',
                 style: const TextStyle(color: Colors.white70),
               ),
             ],
           ),
-          // Section des extras (affichée seulement si au moins une option est sélectionnée)
           if (extras > 0) ...[
             const SizedBox(height: 8),
             Row(
@@ -1003,9 +927,7 @@ class _BookingScreenState extends State<BookingScreen> {
               ],
             ),
           ],
-          // Ligne de séparation entre le détail et le total
           const Divider(color: Colors.white24, height: 24),
-          // Ligne pour le prix total (en plus gros et en bleu)
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
