@@ -1,175 +1,148 @@
-// Importation de la bibliothèque pour encoder/décoder du JSON
+// Importation de la bibliothèque 'dart:convert' pour encoder/décoder du JSON
 import 'dart:convert';
 
-// Importation de la bibliothèque HTTP pour effectuer des requêtes réseau
+// Importation du package 'http' pour effectuer des requêtes HTTP
 import 'package:http/http.dart' as http;
 
-// Classe de service d'authentification regroupant toutes les méthodes liées à l'API
+// Importation du package 'image_picker' pour utiliser le type XFile (représentation d'un fichier image)
+import 'package:image_picker/image_picker.dart'; // Ajout pour XFile
+
+// Importation de 'http_parser' pour manipuler les types MIME (nécessaire pour l'upload)
+import 'package:http_parser/http_parser.dart'; // Pour MediaType
+
+// Définition de la classe AuthService qui contient toutes les méthodes d'appel à l'API backend
 class AuthService {
-  
-  // URL de base de l'API backend (serveur local sur le port 8000)
-
-  static const String baseUrl = 'http://localhost:8000';
-
+  // URL de base de l'API (à adapter selon l'environnement de déploiement)
+  static const String baseUrl = 'http://localhost:8000'; // À adapter selon l'environnement
 
   // ========== MÉTHODES D'AUTHENTIFICATION ==========
 
-  // Méthode statique pour l'inscription d'un nouvel utilisateur
+  // Méthode statique pour enregistrer un nouvel utilisateur
   static Future<Map> register(String username, String email, String password) async {
+    // Bloc try-catch pour capturer les erreurs réseau ou d'exécution
     try {
-      // Envoi d'une requête POST à l'endpoint /register avec les données utilisateur
+      // Envoi d'une requête POST à l'endpoint '/register'
       final response = await http.post(
-        // Construction de l'URL complète pour l'inscription
-        //tranforme chaine en url
-        Uri.parse('$baseUrl/register'),
-        // Définition du header pour indiquer que le corps est en JSON
-        headers: {'Content-Type': 'application/json'},
-        // Encodage des données utilisateur (nom, email, mot de passe) en JSON
-        body: jsonEncode({
+        Uri.parse('$baseUrl/register'), // Construction de l'URI complète
+        headers: {'Content-Type': 'application/json'}, // En-tête indiquant du JSON
+        body: jsonEncode({ // Corps de la requête encodé en JSON
           'username': username,
           'email': email,
           'password': password
         }),
       );
-
-      // Retourne un map indiquant le succès (statut 201) et les données de réponse décodées
+      // Retourne un Map contenant le succès de l'opération et les données de réponse
       return {
-        'success': response.statusCode == 201,
-        'data': jsonDecode(response.body)
+        'success': response.statusCode == 201, // Vérifie si le code HTTP est 201 (créé)
+        'data': jsonDecode(response.body) // Décode le corps JSON de la réponse
       };
-    } catch (e) {
-      // En cas d'erreur, retourne un map d'erreur avec le message d'exception
+    } catch (e) { // En cas d'erreur (ex: pas de connexion)
+      // Retourne un Map indiquant l'échec et le message d'erreur
       return {'success': false, 'message': 'Erreur connexion: $e'};
     }
   }
 
-  // Méthode statique pour la connexion d'un utilisateur existant
+  // Méthode statique pour connecter un utilisateur
   static Future<Map> login(String email, String password) async {
     try {
-      // Envoi d'une requête POST à l'endpoint /login
+      // Envoi d'une requête POST à l'endpoint '/login' avec des données x-www-form-urlencoded
       final response = await http.post(
         Uri.parse('$baseUrl/login'),
-        // Utilisation du format x-www-form-urlencoded pour les données de connexion
-           // Ce format est requis par OAuth2 pour l'authentification
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        // Corps de la requête contenant l'email (utilisé comme username) et le mot de passe
-        body: {
-          'username': email,
-          'password': password
-        },
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'}, // Type de contenu spécifique
+        body: {'username': email, 'password': password}, // Corps sous forme de Map (sera encodé automatiquement)
       );
-
-      // Retourne un map indiquant le succès (statut 200) et les données de réponse
+      // Retourne le résultat avec vérification du code 200 (OK)
       return {
         'success': response.statusCode == 200,
         'data': jsonDecode(response.body)
       };
     } catch (e) {
-      // En cas d'erreur, retourne un map d'erreur
       return {'success': false, 'message': 'Erreur connexion: $e'};
     }
   }
 
-  // Méthode statique pour réinitialiser le mot de passe d'un utilisateur
+  // Méthode statique pour réinitialiser le mot de passe
   static Future<Map> resetPassword(String email, String newPassword) async {
     try {
-      // Envoi d'une requête POST à l'endpoint /forgot-password/reset
+      // Requête POST à '/forgot-password/reset' avec le nouveau mot de passe en JSON
       final response = await http.post(
         Uri.parse('$baseUrl/forgot-password/reset'),
-        // Définition du header pour indiquer le format JSON
         headers: {'Content-Type': 'application/json'},
-        // Encodage de l'email et du nouveau mot de passe en JSON
-        body: jsonEncode({
-          'email': email,
-          'new_password': newPassword
-        }),
+        body: jsonEncode({'email': email, 'new_password': newPassword}),
       );
-
-      // Retourne un map indiquant le succès (statut 200) et les données de réponse
       return {
         'success': response.statusCode == 200,
         'data': jsonDecode(response.body)
       };
     } catch (e) {
-      // En cas d'erreur, retourne un map d'erreur
       return {'success': false, 'message': 'Erreur connexion: $e'};
     }
   }
 
   // ========== MÉTHODES POUR LES VÉHICULES ==========
 
-  // Méthode statique pour récupérer la liste des véhicules
+  // Méthode statique pour récupérer la liste des véhicules (accessible sans token ?)
   static Future<List<dynamic>> getVehicles({String? token}) async {
     try {
-      // Création d'un map pour les headers, initialement avec le type de contenu JSON
+      // Préparation des en-têtes HTTP
       final Map<String, String> headers = {'Content-Type': 'application/json'};
-      // Si un token est fourni, on ajoute le header d'autorisation Bearer
-      if (token != null) headers['Authorization'] = 'Bearer $token';
+      if (token != null) headers['Authorization'] = 'Bearer $token'; // Ajout du token si fourni
 
-      // Envoi d'une requête GET à l'endpoint /vehicles
+      // Requête GET à l'endpoint '/vehicles'
       final response = await http.get(Uri.parse('$baseUrl/vehicles'), headers: headers);
-
-      // Si la réponse a un statut 200 (succès), on décode le corps de la réponse
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        // Vérifie que les données sont bien une liste, sinon retourne une liste vide
-        return (data is List) ? data : [];
+      if (response.statusCode == 200) { // Si la requête réussit
+        final data = jsonDecode(response.body); // Décode la réponse
+        return (data is List) ? data : []; // Retourne une liste si c'en est une, sinon liste vide
       }
-      // En cas de statut différent de 200, retourne une liste vide
-      return [];
+      return []; // Retourne une liste vide en cas d'échec
     } catch (e) {
-      // En cas d'erreur, affiche l'erreur dans la console et retourne une liste vide
-      print('Erreur récupération véhicules: $e');
+      print('Erreur récupération véhicules: $e'); // Affiche l'erreur dans la console
       return [];
     }
   }
 
-  // Méthode statique pour ajouter un nouveau véhicule (admin uniquement)
+  // Méthode statique pour ajouter un véhicule (réservé à l'admin)
   static Future<Map<String, dynamic>> addVehicle(Map<String, dynamic> vehicleData, String token) async {
     try {
-      print('📤 Envoi du véhicule: $vehicleData');
-      
+      print('📤 Envoi du véhicule: $vehicleData'); // Log de débogage
+      // Requête POST à '/admin/vehicles' avec authentification Bearer
       final response = await http.post(
         Uri.parse('$baseUrl/admin/vehicles'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
-        body: json.encode(vehicleData),
+        body: json.encode(vehicleData), // Encodage des données du véhicule en JSON
       );
+      print('📊 Statut de la réponse: ${response.statusCode}'); // Log du statut
+      print('📊 Corps de la réponse: ${response.body}'); // Log du corps
 
-      print('📊 Statut de la réponse: ${response.statusCode}');
-      print('📊 Corps de la réponse: ${response.body}');
-
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200) { // Succès
         final responseData = json.decode(response.body);
         return {
           'success': true,
           'data': responseData,
           'message': responseData['message'] ?? 'Véhicule ajouté avec succès'
         };
-      } else {
+      } else { // Erreur côté serveur
         final errorData = json.decode(response.body);
         return {
           'success': false,
           'message': errorData['detail'] ?? 'Erreur lors de l\'ajout'
         };
       }
-    } catch (e) {
+    } catch (e) { // Erreur réseau ou autre exception
       print("❌ Erreur addVehicle: $e");
-      return {
-        'success': false,
-        'message': 'Erreur de connexion: $e'
-      };
+      return {'success': false, 'message': 'Erreur de connexion: $e'};
     }
   }
 
   // ========== MÉTHODES POUR LES FAVORIS ==========
 
-  // Méthode statique pour récupérer la liste des favoris de l'utilisateur
+  // Méthode statique pour récupérer les favoris de l'utilisateur connecté
   static Future<List<dynamic>> getFavorites(String token) async {
     try {
-      // Envoi d'une requête GET à l'endpoint /favorites avec le token d'autorisation
+      // Requête GET à '/favorites' avec authentification
       final response = await http.get(
         Uri.parse('$baseUrl/favorites'),
         headers: {
@@ -177,16 +150,12 @@ class AuthService {
           'Authorization': 'Bearer $token',
         },
       );
-      // Si la réponse a un statut 200, on décode le corps de la réponse
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        // Vérifie que les données sont bien une liste, sinon retourne une liste vide
-        return (data is List) ? data : [];
+        return (data is List) ? data : []; // Retourne une liste de favoris
       }
-      // En cas de statut différent de 200, retourne une liste vide
       return [];
     } catch (e) {
-      // En cas d'erreur, affiche l'erreur dans la console et retourne une liste vide
       print('Erreur récupération favoris: $e');
       return [];
     }
@@ -195,20 +164,17 @@ class AuthService {
   // Méthode statique pour ajouter un véhicule aux favoris
   static Future<Map> addFavorite(int carId, String token) async {
     try {
-      // Envoi d'une requête POST à l'endpoint /favorites/add
+      // Requête POST à '/favorites/add' avec l'identifiant du véhicule
       final response = await http.post(
         Uri.parse('$baseUrl/favorites/add'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
-        // Encodage de l'ID du véhicule en JSON
         body: jsonEncode({'car_id': carId}),
       );
-      // Retourne un map indiquant le succès (statut 200) et les données de réponse
       return {'success': response.statusCode == 200, 'data': jsonDecode(response.body)};
     } catch (e) {
-      // En cas d'erreur, retourne un map d'erreur
       return {'success': false, 'message': 'Erreur: $e'};
     }
   }
@@ -216,7 +182,7 @@ class AuthService {
   // Méthode statique pour retirer un véhicule des favoris
   static Future<Map> removeFavorite(int carId, String token) async {
     try {
-      // Envoi d'une requête DELETE à l'endpoint /favorites/remove/{carId}
+      // Requête DELETE à '/favorites/remove/$carId'
       final response = await http.delete(
         Uri.parse('$baseUrl/favorites/remove/$carId'),
         headers: {
@@ -224,74 +190,55 @@ class AuthService {
           'Authorization': 'Bearer $token',
         },
       );
-      // Retourne un map indiquant le succès (statut 200) et les données de réponse
       return {'success': response.statusCode == 200, 'data': jsonDecode(response.body)};
     } catch (e) {
-      // En cas d'erreur, retourne un map d'erreur
       return {'success': false, 'message': 'Erreur: $e'};
     }
   }
 
   // ========== MÉTHODES POUR LES RÉSERVATIONS ==========
 
-  // Méthode statique pour ajouter une nouvelle réservation
+  // Méthode statique pour créer une nouvelle réservation
   static Future<Map<String, dynamic>> addBooking(Map<String, dynamic> data, String token) async {
     try {
-      // Affichage dans la console des données de réservation envoyées
       print('🔄 Envoi de la réservation: $data');
-      
-      // Envoi d'une requête POST à l'endpoint /bookings
+      // Requête POST à '/bookings'
       final response = await http.post(
         Uri.parse('$baseUrl/bookings'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
-        // Encodage des données de réservation en JSON
         body: jsonEncode(data),
       );
-
-      // Affichage du statut et du corps de la réponse pour le débogage
       print('📊 Statut de la réponse: ${response.statusCode}');
       print('📊 Corps de la réponse: ${response.body}');
 
-      // Si la réponse a un statut 200 (succès)
       if (response.statusCode == 200) {
-        // Décodage des données de réponse
         final responseData = jsonDecode(response.body);
-        // Retourne un map de succès avec les données et un message
         return {
           'success': true,
           'data': responseData,
           'message': responseData['message'] ?? 'Réservation créée avec succès'
         };
       } else {
-        // Si le statut est différent de 200, on décode les données d'erreur
         final errorData = jsonDecode(response.body);
-        // Retourne un map d'échec avec le message d'erreur
         return {
           'success': false,
           'message': errorData['detail'] ?? 'Erreur lors de la création de la réservation'
         };
       }
     } catch (e) {
-      // En cas d'exception, affiche l'erreur dans la console
       print("❌ Erreur addBooking: $e");
-      // Retourne un map d'échec avec le message d'erreur
-      return {
-        'success': false,
-        'message': 'Erreur de connexion: $e'
-      };
+      return {'success': false, 'message': 'Erreur de connexion: $e'};
     }
   }
 
-  // Méthode statique pour récupérer les réservations de l'utilisateur
+  // Méthode statique pour récupérer les réservations de l'utilisateur connecté
   static Future<List<dynamic>> fetchMyBookings(String token) async {
     try {
-      // Affichage dans la console du début de la récupération
       print('🔄 Récupération des réservations...');
-      
-      // Envoi d'une requête GET à l'endpoint /my-bookings
+      // Requête GET à '/my-bookings'
       final response = await http.get(
         Uri.parse('$baseUrl/my-bookings'),
         headers: {
@@ -299,38 +246,29 @@ class AuthService {
           'Authorization': 'Bearer $token',
         },
       );
-
-      // Affichage du statut et du corps de la réponse pour le débogage
       print('📊 Statut de la réponse: ${response.statusCode}');
       print('📊 Corps de la réponse: ${response.body}');
 
-      // Si la réponse a un statut 200 (succès)
       if (response.statusCode == 200) {
-        // Décodage des données de réponse
         final decodedData = jsonDecode(response.body);
-        // Vérifie que les données sont bien une liste, sinon retourne une liste vide
-        return (decodedData is List) ? decodedData : [];
+        return (decodedData is List) ? decodedData : []; // Retourne la liste des réservations
       } else {
-        // Si le statut est différent de 200, affiche l'erreur serveur
         print("❌ Erreur serveur: ${response.statusCode} - ${response.body}");
-        // Retourne une liste vide
         return [];
       }
     } catch (e) {
-      // En cas d'exception, affiche l'erreur dans la console
       print("❌ Erreur fetchMyBookings: $e");
-      // Retourne une liste vide
       return [];
     }
   }
 
   // ========== MÉTHODES ADMIN ==========
 
-  // Récupère toutes les réservations (admin uniquement)
+  // Méthode statique pour récupérer toutes les réservations (admin uniquement)
   static Future<List<dynamic>> fetchAllBookings(String token) async {
     try {
       print('📄 Récupération de toutes les réservations (admin)...');
-      
+      // Requête GET à '/admin/bookings'
       final response = await http.get(
         Uri.parse('$baseUrl/admin/bookings'),
         headers: {
@@ -338,38 +276,34 @@ class AuthService {
           'Authorization': 'Bearer $token',
         },
       );
-
       print('📊 Statut de la réponse: ${response.statusCode}');
       print('📊 Corps de la réponse: ${response.body}');
 
       if (response.statusCode == 200) {
         final decodedData = jsonDecode(response.body);
         return (decodedData is List) ? decodedData : [];
-        //statusCode == 403:accés interdit
       } else if (response.statusCode == 403) {
         print("❌ Accès refusé: droits administrateur requis");
         return [];
-        //Erreur réponse du serveur
       } else {
         print("❌ Erreur serveur: ${response.statusCode} - ${response.body}");
         return [];
       }
-      //catch (e) → Erreur technique / inattendue
     } catch (e) {
       print("❌ Erreur fetchAllBookings: $e");
       return [];
     }
   }
 
-  // Met à jour le statut d'une réservation (admin uniquement)
+  // Méthode statique pour mettre à jour le statut d'une réservation (admin)
   static Future<Map<String, dynamic>> updateBookingStatus(
-    int bookingId, 
-    String newStatus, 
+    int bookingId,
+    String newStatus,
     String token
   ) async {
     try {
       print('📝 Mise à jour du statut de la réservation #$bookingId vers "$newStatus"...');
-      
+      // Requête PATCH à '/admin/bookings/$bookingId/status?status=$newStatus'
       final response = await http.patch(
         Uri.parse('$baseUrl/admin/bookings/$bookingId/status?status=$newStatus'),
         headers: {
@@ -377,7 +311,6 @@ class AuthService {
           'Authorization': 'Bearer $token',
         },
       );
-
       print('📊 Statut de la réponse: ${response.statusCode}');
       print('📊 Corps de la réponse: ${response.body}');
 
@@ -397,21 +330,15 @@ class AuthService {
       }
     } catch (e) {
       print("❌ Erreur updateBookingStatus: $e");
-      return {
-        'success': false,
-        'message': 'Erreur de connexion: $e'
-      };
+      return {'success': false, 'message': 'Erreur de connexion: $e'};
     }
   }
 
-  // Supprime une réservation (admin uniquement)
-  static Future<Map<String, dynamic>> deleteBooking(
-    int bookingId, 
-    String token
-  ) async {
+  // Méthode statique pour supprimer une réservation (admin)
+  static Future<Map<String, dynamic>> deleteBooking(int bookingId, String token) async {
     try {
       print('🗑️ Suppression de la réservation #$bookingId...');
-      
+      // Requête DELETE à '/admin/bookings/$bookingId'
       final response = await http.delete(
         Uri.parse('$baseUrl/admin/bookings/$bookingId'),
         headers: {
@@ -419,7 +346,6 @@ class AuthService {
           'Authorization': 'Bearer $token',
         },
       );
-
       print('📊 Statut de la réponse: ${response.statusCode}');
       print('📊 Corps de la réponse: ${response.body}');
 
@@ -439,17 +365,15 @@ class AuthService {
       }
     } catch (e) {
       print("❌ Erreur deleteBooking: $e");
-      return {
-        'success': false,
-        'message': 'Erreur de connexion: $e'
-      };
+      return {'success': false, 'message': 'Erreur de connexion: $e'};
     }
   }
 
   // ========== MÉTHODES POUR LE CHAT ==========
 
-  // Méthode pour envoyer un message au chatbot
+  // Méthode statique pour envoyer un message dans une conversation (assistant)
   static Future<Map<String, dynamic>> sendChatMessage(int convId, String text, String token) async {
+    // Requête POST à '/assistant/chat'
     final response = await http.post(
       Uri.parse('$baseUrl/assistant/chat'),
       headers: {
@@ -461,16 +385,17 @@ class AuthService {
         'content': text,
       }),
     );
-    return jsonDecode(response.body);
+    return jsonDecode(response.body); // Retourne la réponse décodée
   }
 
-  // Méthode pour envoyer un message au chatbot et obtenir une réponse (avec gestion d'erreur améliorée)
+  // Méthode statique pour enregistrer un message et obtenir la réponse de l'assistant (identique à sendChatMessage mais avec gestion d'erreur)
   static Future<Map<String, dynamic>> saveAndGetAssistantReply({
     required int conversationId,
     required String content,
     required String token,
   }) async {
     try {
+      // Même requête POST que sendChatMessage
       final response = await http.post(
         Uri.parse('$baseUrl/assistant/chat'),
         headers: {
@@ -482,7 +407,6 @@ class AuthService {
           'content': content,
         }),
       );
-
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
       } else {
@@ -490,46 +414,36 @@ class AuthService {
       }
     } catch (e) {
       print("❌ Erreur saveAndGetAssistantReply: $e");
-      rethrow;
+      rethrow; // Relance l'exception pour la gestion par l'appelant
     }
   }
 
-  // Méthode pour créer une nouvelle conversation
+  // Méthode statique pour créer une nouvelle conversation
   static Future<Map<String, dynamic>> createConversation(String token, String title) async {
     try {
+      // Requête POST à '/conversations/'
       final response = await http.post(
         Uri.parse('$baseUrl/conversations/'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $token',
         },
-        body: jsonEncode({
-          'title': title,
-        }),
+        body: jsonEncode({'title': title}),
       );
-
-      if (response.statusCode == 201) {
-        return {
-          'success': true,
-          'data': jsonDecode(response.body),
-        };
+      if (response.statusCode == 201) { // Création réussie
+        return {'success': true, 'data': jsonDecode(response.body)};
       } else {
-        return {
-          'success': false,
-          'message': 'Erreur lors de la création de la conversation',
-        };
+        return {'success': false, 'message': 'Erreur lors de la création de la conversation'};
       }
     } catch (e) {
-      return {
-        'success': false,
-        'message': 'Erreur de connexion: $e',
-      };
+      return {'success': false, 'message': 'Erreur de connexion: $e'};
     }
   }
 
-  // Méthode pour récupérer les conversations
+  // Méthode statique pour récupérer toutes les conversations de l'utilisateur
   static Future<List<dynamic>> getUserConversations(String token) async {
     try {
+      // Requête GET à '/conversations/'
       final response = await http.get(
         Uri.parse('$baseUrl/conversations/'),
         headers: {
@@ -537,7 +451,6 @@ class AuthService {
           'Authorization': 'Bearer $token',
         },
       );
-
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         return (data is List) ? data : [];
@@ -549,14 +462,14 @@ class AuthService {
     }
   }
 
-  // Méthode pour mettre à jour le profil utilisateur
+  // Méthode statique pour mettre à jour le profil de l'utilisateur
   static Future<Map<String, dynamic>> updateProfile(
-    Map<String, dynamic> userData, 
+    Map<String, dynamic> userData,
     String token
   ) async {
     try {
       print('📤 Envoi des données de mise à jour: $userData');
-      
+      // Requête PUT à '/update-profile/'
       final response = await http.put(
         Uri.parse('$baseUrl/update-profile/'),
         headers: {
@@ -565,7 +478,6 @@ class AuthService {
         },
         body: json.encode(userData),
       );
-
       print('📥 Réponse API (${response.statusCode}): ${response.body}');
 
       final responseData = json.decode(response.body);
@@ -583,11 +495,60 @@ class AuthService {
     }
   }
 
+  // ========== MÉTHODE UPLOAD D'IMAGE  ==========
+  static Future<Map<String, dynamic>> uploadImage(XFile imageFile, String token) async {
+    try {
+      // Création d'une requête multipart (pour envoyer un fichier)
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/upload-image/'),
+      );
+      request.headers['Authorization'] = 'Bearer $token'; // Ajout du token
+
+      // Lecture des bytes de l'image
+      final bytes = await imageFile.readAsBytes();
+      // Récupère le type MIME (ex: 'image/png') ; fallback si null
+      final mimeType = imageFile.mimeType ?? 'image/png'; // fallback si null
+      // Ajout du fichier à la requête multipart
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'file', // Nom du champ attendu par le serveur
+          bytes,
+          filename: imageFile.name, // Nom du fichier
+          contentType: MediaType.parse(mimeType), // Important pour le bon type MIME
+        ),
+      );
+
+      print('📤 Upload de l\'image: ${imageFile.name} (type: $mimeType)');
+
+      // Envoi de la requête et récupération de la réponse
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      print('📥 Réponse upload (${response.statusCode}): ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return {'success': true, 'url': data['url']}; // Retourne l'URL de l'image
+      } else {
+        final errorData = jsonDecode(response.body);
+        return {
+          'success': false,
+          'message': errorData['detail'] ?? 'Erreur lors de l\'upload',
+        };
+      }
+    } catch (e) {
+      print('❌ Erreur uploadImage: $e');
+      return {'success': false, 'message': 'Erreur de connexion: $e'};
+    }
+  }
+
   // ========== MÉTHODES POUR LA GESTION DES VÉHICULES (ADMIN) ==========
 
-  /// Supprime un véhicule (admin uniquement)
+  // Méthode statique pour supprimer un véhicule (admin)
   static Future<Map<String, dynamic>> deleteVehicle(int vehicleId, String token) async {
     try {
+      // Requête DELETE à '/admin/vehicles/$vehicleId'
       final response = await http.delete(
         Uri.parse('$baseUrl/admin/vehicles/$vehicleId'),
         headers: {
@@ -595,7 +556,6 @@ class AuthService {
           'Authorization': 'Bearer $token',
         },
       );
-
       if (response.statusCode == 200) {
         return {
           'success': true,
@@ -611,22 +571,19 @@ class AuthService {
       }
     } catch (e) {
       print("❌ Erreur deleteVehicle: $e");
-      return {
-        'success': false,
-        'message': 'Erreur de connexion: $e'
-      };
+      return {'success': false, 'message': 'Erreur de connexion: $e'};
     }
   }
 
-  /// Met à jour un véhicule (admin uniquement)
+  // Méthode statique pour mettre à jour un véhicule (admin)
   static Future<Map<String, dynamic>> updateVehicle(
-    int vehicleId, 
-    Map<String, dynamic> vehicleData, 
+    int vehicleId,
+    Map<String, dynamic> vehicleData,
     String token
   ) async {
     try {
       print('📤 Mise à jour du véhicule $vehicleId: $vehicleData');
-      
+      // Requête PUT à '/admin/vehicles/$vehicleId'
       final response = await http.put(
         Uri.parse('$baseUrl/admin/vehicles/$vehicleId'),
         headers: {
@@ -635,7 +592,6 @@ class AuthService {
         },
         body: jsonEncode(vehicleData),
       );
-
       print('📥 Réponse API (${response.statusCode}): ${response.body}');
 
       if (response.statusCode == 200) {
@@ -653,10 +609,7 @@ class AuthService {
       }
     } catch (e) {
       print("❌ Erreur updateVehicle: $e");
-      return {
-        'success': false,
-        'message': 'Erreur de connexion: $e'
-      };
+      return {'success': false, 'message': 'Erreur de connexion: $e'};
     }
   }
-} 
+}

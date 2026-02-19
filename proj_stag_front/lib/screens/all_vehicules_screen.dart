@@ -227,10 +227,14 @@ class _AllVehiclesScreenState extends State<AllVehiclesScreen> {
           });
         }
 
-        // Si aucun filtre n'est appliqué et la liste filtrée est vide, utilise tous les véhicules
-        if (_filteredVehicles.isEmpty && _searchController.text.isEmpty && _selectedCategory == 'Tous') {
-          _filteredVehicles = provider.allVehicles;
-        }
+        // Si aucun filtre n'est appliqué et la liste filtrée est vide
+     if (_filteredVehicles.isEmpty &&
+    _searchController.text.isEmpty &&
+    _selectedCategory == 'Tous' &&
+    _currentPriceLimit == _maxPriceFound &&
+    !_onlyAvailable) {
+  _filteredVehicles = provider.allVehicles;
+}
 
         // Retourne la structure principale de l'écran
         return Scaffold(

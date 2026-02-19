@@ -2,99 +2,130 @@
 # IMPORTATION DES MODULES NÉCESSAIRES
 # ========================================
 
-# Importation de FastAPI et de ses composants principaux pour créer l'API
-#API:ensemble de règles et de méthodes permettant à des logiciels de communiquer et d’échanger des données entre eux
-from fastapi import FastAPI, HTTPException, Depends, status, Form, Request
-# Middleware CORS pour autoriser les requêtes cross-origin (depuis d'autres domaines)
+# Importation de FastAPI pour créer l'application web et gérer les requêtes HTTP
+from fastapi import FastAPI, HTTPException, Depends, status, Form, Request, UploadFile, File
+
+# Middleware pour gérer le CORS (Cross-Origin Resource Sharing) - permet à d'autres domaines d'accéder à l'API
 from fastapi.middleware.cors import CORSMiddleware
-# Pydantic pour la validation des données (schémas)
+
+# Pour servir des fichiers statiques (images, CSS, etc.) depuis un dossier
+from fastapi.staticfiles import StaticFiles
+
+# Modèles Pydantic pour la validation des données reçues et envoyées
 from pydantic import BaseModel, EmailStr
-# SQLAlchemy ORM pour interagir avec la base de données
+
+# Session de base de données SQLAlchemy
 from sqlalchemy.orm import Session
-# Module pour le hachage sécurisé des mots de passe
+
+# Bibliothèque bcrypt pour le hachage et la vérification des mots de passe
 import bcrypt
-# Importation de nos modèles de base de données et des dépendances
+
+# Importation des modèles SQLAlchemy définis dans le fichier models.py
 from models import User, vehicles, Favorite, Booking, Conversation, Message, Base, engine, SessionLocal
-# Types Python pour les annotations de type
+
+# Types optionnels et listes pour les annotations de type
 from typing import Optional, List
-# Modules de gestion des dates et heures
+
+# Modules pour la gestion des dates et heures
 from datetime import datetime, timedelta, date
-# JWT pour la création et vérification des tokens d'authentification
+
+# Bibliothèque JWT pour créer et vérifier les tokens d'authentification
 from jose import JWTError, jwt
-# OAuth2:protocole permet application d’accéder aux données d’un utilisateur sur un autre service sans connaître son mot de passe.
-#OAuth2PasswordBearer:schéma d’authentification où l’utilisateur fournit un token
-#OAuth2PasswordRequestForm: récupérer les infos de connexion envoyées par l’utilisateur pour obtenir un token via OAuth2.
+
+# Schéma OAuth2 pour l'authentification par token
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+
 # Réponse JSON personnalisée
 from fastapi.responses import JSONResponse
 
-# ========================================
-# CONFIGURATION JWT (JSON WEB TOKENS)
-# ========================================
+# Modules système pour la manipulation de fichiers et de chemins
+import os
+import shutil
 
-# Clé secrète utilisée pour signer les tokens JWT 
+# Génération d'identifiants uniques pour les noms de fichiers uploadés
+import uuid
+
+# ========================================
+# CONFIGURATION JWT
+# ========================================
+# Clé secrète utilisée pour signer les tokens JWT (à garder secrète en production)
 SECRET_KEY = "a1d03237d6435d1d39ab8047118d622c314024ca04b478877a13e8ae238674d1"
-# Algorithme de cryptage utilisé pour les tokens
+
+# Algorithme de chiffrement pour JWT
 ALGORITHM = "HS256"
-# Durée de validité des tokens d'accès en minutes
+
+# Durée d'expiration du token en minutes
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 # ========================================
 # INITIALISATION DE LA BASE DE DONNÉES
 # ========================================
-
-# Création de toutes les tables définies dans les modèles SQLAlchemy
-# Si les tables existent déjà, cette commande ne fait rien
+# Crée toutes les tables définies dans les modèles SQLAlchemy si elles n'existent pas déjà
 Base.metadata.create_all(bind=engine)
 
 # ========================================
 # INITIALISATION DE L'APPLICATION FASTAPI
 # ========================================
-
-# Création de l'instance principale de l'application FastAPI
+# Crée une instance de l'application FastAPI avec un titre et une version
 app = FastAPI(title="API d'Authentification", version="1.0.0")
 
 # ========================================
-# CONFIGURATION CORS (Cross-Origin Resource Sharing)
+# CONFIGURATION DU DOSSIER D'IMAGES UPLOADÉES
 # ========================================
+# Définit le dossier où seront stockées les images uploadées
+UPLOAD_FOLDER = "static/images"
 
-# Ajout du middleware CORS pour autoriser les requêtes depuis n'importe quelle origine
+# Crée le dossier s'il n'existe pas (exist_ok=True évite une erreur si le dossier existe déjà)
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# Monte le dossier "static" pour qu'il soit accessible via l'URL /static
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# ========================================
+# CONFIGURATION CORS
+# ========================================
+# Ajoute le middleware CORS à l'application
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Autorise toutes les origines 
-    allow_credentials=True,  # Autorise l'envoi de cookies
-    allow_methods=["*"],  # Autorise toutes les méthodes HTTP (GET, POST, etc.)
-    allow_headers=["*"],  # Autorise tous les en-têtes HTTP
+    allow_origins=["*"],  # Autorise toutes les origines (à restreindre en production)
+    allow_credentials=True,  # Autorise l'envoi de cookies/credentials
+    allow_methods=["*"],  # Autorise toutes les méthodes HTTP
+    allow_headers=["*"],  # Autorise tous les en-têtes
 )
 
 # ========================================
 # FONCTIONS UTILITAIRES DE BASE DE DONNÉES
 # ========================================
-
 def get_db():
-    # Création d'une nouvelle session de base de données
-    db = SessionLocal()
+    """
+    Dépendance FastAPI pour obtenir une session de base de données.
+    """
+    db = SessionLocal()  # Crée une nouvelle session
     try:
-        # Yield retourne la session à la fonction appelante
-        yield db
+        yield db  # Fournit la session à la route
     finally:
-        # Ferme la session après utilisation (même en cas d'erreur)
-        db.close()
+        db.close()  # Ferme la session après utilisation
 
 # ========================================
 # FONCTIONS UTILITAIRES DE SÉCURITÉ
 # ========================================
-
 def hash_password(password: str) -> str:
-    # Génère un salt aléatoire et hache le mot de passe
-    #UTF-8 est un format d’encodage de caractères
+    """
+    Hache un mot de passe en clair avec bcrypt.
+    """
+    # encode le mot de passe en bytes, génère un sel et hache, puis retourne le hash en string
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 def verify_password(password: str, hashed: str) -> bool:
-    # Compare le mot de passe fourni avec le hash stocké
+    """
+    Vérifie si un mot de passe en clair correspond à un hash bcrypt.
+    """
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
 def user_response(user: User):
+    """
+    Transforme un objet User en dictionnaire sérialisable (sans le mot de passe).
+    """
     return {
         "id": user.id,
         "username": user.username,
@@ -103,255 +134,258 @@ def user_response(user: User):
     }
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
-    # Copie des données pour éviter la modification de l'original
-    to_encode = data.copy()
-    
-    # Détermination de la date d'expiration
+    """
+    Crée un token JWT avec une date d'expiration.
+    """
+    to_encode = data.copy()  # Copie les données pour ne pas modifier l'original
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = datetime.utcnow() + expires_delta  # Expiration personnalisée
     else:
-        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    
-    # Ajout de la date d'expiration aux données encodées
-    to_encode.update({"exp": expire})
-    # Encodage des données en token JWT
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)  # Expiration par défaut
+    to_encode.update({"exp": expire})  # Ajoute le champ "exp"
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)  # Encode et retourne le token
 
 # ========================================
 # MODÈLES PYDANTIC POUR LA VALIDATION
 # ========================================
-
 class UserRegister(BaseModel):
-    username: str  # Nom d'utilisateur requis
-    email: EmailStr  # Email valide requis (validation automatique)
-    password: str  # Mot de passe requis
+    """
+    Schéma de validation pour l'inscription d'un utilisateur.
+    """
+    username: str
+    email: EmailStr  # Valide que l'email a un format correct
+    password: str
+
 class UserLogin(BaseModel):
-    email: EmailStr  # Email valide requis
-    password: str  # Mot de passe requis
+    """
+    Schéma de validation pour la connexion.
+    """
+    email: EmailStr
+    password: str
+
 class ResetPassword(BaseModel):
-    email: EmailStr  # Email de l'utilisateur
-    new_password: str  # Nouveau mot de passe
+    """
+    Schéma pour la réinitialisation du mot de passe.
+    """
+    email: EmailStr
+    new_password: str
+
 class FavoriteRequest(BaseModel):
-    car_id: int  # ID du véhicule à ajouter
+    """
+    Schéma pour ajouter un favori (contient l'ID de la voiture).
+    """
+    car_id: int
 
 class BookingCreate(BaseModel):
-
-    car_id: int  # ID du véhicule réservé
-    full_name: str  # Nom complet du client
-    pickup_date: str  # Date de prise en charge (format string)
-    return_date: str  # Date de retour (format string)
-    total_price: float  # Prix total de la location
+    """
+    Schéma pour créer une réservation.
+    """
+    car_id: int
+    full_name: str
+    pickup_date: str  # Date sous forme de chaîne, sera convertie en date
+    return_date: str
+    total_price: float
 
 class BookingResponse(BaseModel):
-
-    id: int  # ID de la réservation
-    car_id: int  # ID du véhicule
-    user_id: int  # ID de l'utilisateur
-    full_name: str  # Nom complet
-    pickup_date: date  # Date de prise en charge
-    return_date: date  # Date de retour
-    total_price: float  # Prix total
-    status: str  # Statut de la réservation
-    created_at: Optional[datetime]  # Date de création (optionnelle)
-#from_attributes = True:Pydantic peut aussi lire les objets (comme SQLAlchemy) et leurs attributs pour créer le modèle.
+    """
+    Schéma de réponse pour une réservation (utilisé par Pydantic pour la sérialisation).
+    """
+    id: int
+    car_id: int
+    user_id: int
+    full_name: str
+    pickup_date: date
+    return_date: date
+    total_price: float
+    status: str
+    created_at: Optional[datetime]
     class Config:
-        # Permet la conversion depuis les objets SQLAlchemy
-        from_attributes = True
+        from_attributes = True  # Permet de créer le modèle à partir d'un objet SQLAlchemy
 
 class UpdateProfileRequest(BaseModel):
-
-    username: Optional[str] = None  # Nouveau nom d'utilisateur (optionnel)
-    email: Optional[str] = None  # Nouvel email (optionnel)
-    current_password: Optional[str] = None  # Mot de passe actuel (pour vérification)
-    new_password: Optional[str] = None  # Nouveau mot de passe (optionnel)
+    """
+    Schéma pour la mise à jour du profil utilisateur.
+    """
+    username: Optional[str] = None
+    email: Optional[str] = None
+    current_password: Optional[str] = None
+    new_password: Optional[str] = None
 
 class ConversationCreate(BaseModel):
-
-    title: Optional[str] = "Nouvelle conversation"  # Titre par défaut
+    """
+    Schéma pour créer une nouvelle conversation (titre optionnel).
+    """
+    title: Optional[str] = "Nouvelle conversation"
 
 class MessageCreate(BaseModel):
-  
-    content: str  # Contenu du message
-    is_user: bool = True  # Indique si le message vient de l'utilisateur ou du bot
+    """
+    Schéma pour créer un message dans une conversation.
+    """
+    content: str
+    is_user: bool = True  # True si c'est l'utilisateur qui envoie, False si c'est l'assistant
 
 class MessageResponse(BaseModel):
-  
-    id: int  # ID du message
-    conversation_id: int  # ID de la conversation
-    content: str  # Contenu du message
-    is_user: bool  # Émetteur du message
-    created_at: datetime  # Date de création
-
+    """
+    Schéma de réponse pour un message.
+    """
+    id: int
+    conversation_id: int
+    content: str
+    is_user: bool
+    created_at: datetime
     class Config:
-        #Pydantic peut aussi lire les objets (comme SQLAlchemy) et leurs attributs pour créer le modèle.
-        from_attributes = True  # Compatibilité avec SQLAlchemy
+        from_attributes = True
 
 class ConversationResponse(BaseModel):
-  
-    id: int  # ID de la conversation
-    user_id: int  # ID de l'utilisateur
-    title: str  # Titre de la conversation
-    created_at: datetime  # Date de création
-    updated_at: datetime  # Date de dernière mise à jour
-    is_active: bool  # Statut actif/inactif
-    messages: List[MessageResponse] = []  # Liste des messages associés
-
+    """
+    Schéma de réponse pour une conversation (avec ses messages).
+    """
+    id: int
+    user_id: int
+    title: str
+    created_at: datetime
+    updated_at: datetime
+    is_active: bool
+    messages: List[MessageResponse] = []  # Liste des messages de la conversation
     class Config:
         from_attributes = True
 
 class ConversationListResponse(BaseModel):
-
-    id: int  # ID de la conversation
-    title: str  # Titre
-    created_at: datetime  # Date de création
-    updated_at: datetime  # Date de mise à jour
-    message_count: int  # Nombre total de messages
-    last_message: Optional[str] = None  # Dernier message (optionnel)
-
+    """
+    Schéma de réponse pour la liste des conversations (résumé).
+    """
+    id: int
+    title: str
+    created_at: datetime
+    updated_at: datetime
+    message_count: int  # Nombre de messages dans la conversation
+    last_message: Optional[str] = None  # Contenu du dernier message
     class Config:
         from_attributes = True
 
-# Modèle pour l'assistant de chat
 class ChatInput(BaseModel):
-
-    conversation_id: int  # ID de la conversation en cours
-    content: str  # Message de l'utilisateur
+    """
+    Schéma pour envoyer un message à l'assistant dans une conversation existante.
+    """
+    conversation_id: int
+    content: str
 
 # ========================================
 # CONFIGURATION OAUTH2
 # ========================================
-
-# Définit le schéma OAuth2 pour l'authentification par token
-# Le paramètre tokenUrl pointe vers l'endpoint de connexion
+# Définit le point de terminaison pour obtenir le token (utilisé par la dépendance OAuth2)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
 # ========================================
 # ENDPOINTS D'AUTHENTIFICATION
 # ========================================
-
 @app.post("/register", status_code=status.HTTP_201_CREATED)
 def register(user: UserRegister, db: Session = Depends(get_db)):
-
+    """
+    Endpoint d'inscription d'un nouvel utilisateur.
+    """
     # Vérifie si un utilisateur avec cet email existe déjà
     existing_user = db.query(User).filter(User.email == user.email).first()
     if existing_user:
-        # Retourne une erreur 400 si l'email est déjà utilisé
         raise HTTPException(status_code=400, detail="Email déjà utilisé")
-    
-    # Crée un nouvel utilisateur avec le mot de passe haché
+    # Crée un nouvel utilisateur avec le mot de passe hashé
     new_user = User(
         username=user.username,
         email=user.email,
         hashed_password=hash_password(user.password)
     )
-    
-    # Ajoute l'utilisateur à la session et sauvegarde en base
-    db.add(new_user)
+    db.add(new_user)  # Ajoute à la session
     db.commit()  # Valide la transaction
-    db.refresh(new_user)  # Rafraîchit l'objet avec les données de la base
-    
-    # Retourne une réponse de succès avec les informations utilisateur
+    db.refresh(new_user)  # Rafraîchit l'objet pour obtenir l'ID généré
     return {
         "message": "Inscription réussie",
-        "user": user_response(new_user)
+        "user": user_response(new_user)  # Retourne les infos de l'utilisateur sans mot de passe
     }
 
 @app.post("/login")
-#Depends():permettant d’obtenir automatiquement un objet ou une valeur fournie par une autre fonction.
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-
-    # Recherche l'utilisateur par email OU nom d'utilisateur
+    """
+    Endpoint de connexion. Utilise le formulaire OAuth2 (username/password).
+    Le champ username peut être soit l'email soit le nom d'utilisateur.
+    """
+    # Recherche un utilisateur par email OU par nom d'utilisateur
     db_user = db.query(User).filter(
         (User.email == form_data.username) | (User.username == form_data.username)
     ).first()
-
-    # Vérifie si l'utilisateur existe ET si le mot de passe correspond
+    # Vérifie l'existence et le mot de passe
     if not db_user or not verify_password(form_data.password, db_user.hashed_password):
-        # Erreur 401 en cas d'identifiants invalides
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
-
-    # Crée un token JWT avec l'email et le rôle de l'utilisateur
+    # Crée un token JWT avec l'email et le rôle
     access_token = create_access_token(data={"sub": db_user.email, "role": db_user.role})
-
-    # Retourne le token et les informations utilisateur
     return {
         "access_token": access_token,
         "token_type": "bearer",
         "user": user_response(db_user)
     }
 
-# ========================================
-# FONCTION POUR OBTENIR L'UTILISATEUR COURANT
-# ========================================
-
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
-    # Définition de l'exception en cas d'échec d'authentification
+    """
+    Dépendance pour obtenir l'utilisateur courant à partir du token JWT.
+    """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Token invalide",
-        headers={"WWW-Authenticate": "Bearer"},  # En-tête standard pour l'authentification
+        headers={"WWW-Authenticate": "Bearer"},
     )
-    
     try:
-        # Décodage du token JWT avec la clé secrète
+        # Décode le token JWT
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        # Extraction de l'email depuis le payload
         email: str = payload.get("sub")
         if email is None:
-            # Si le champ 'sub' (subject) est manquant, token invalide
             raise credentials_exception
     except JWTError:
-        # En cas d'erreur de décodage (token expiré, signature invalide, etc.)
         raise credentials_exception
-
-    # Recherche de l'utilisateur dans la base de données par email
+    # Récupère l'utilisateur correspondant dans la base de données
     user = db.query(User).filter(User.email == email).first()
     if user is None:
-        # Si aucun utilisateur trouvé, token invalide
         raise credentials_exception
-
-    # Retourne l'utilisateur authentifié
     return user
 
 @app.get("/me")
 def read_users_me(current_user: User = Depends(get_current_user)):
-    # Retourne les informations formatées de l'utilisateur
+    """
+    Endpoint pour obtenir les informations de l'utilisateur connecté.
+    """
     return user_response(current_user)
 
 @app.post("/forgot-password/reset")
 def reset_password(data: ResetPassword, db: Session = Depends(get_db)):
-    # Recherche l'utilisateur par email
+    """
+    Endpoint pour réinitialiser le mot de passe (sans vérification d'ancien mot de passe).
+    """
     user = db.query(User).filter(User.email == data.email).first()
-    # Vérifie si l'utilisateur existe
     if not user:
         raise HTTPException(status_code=404, detail="Aucun compte associé à cet email")
-    # Met à jour le mot de passe avec le nouveau hash
+    # Met à jour le mot de passe avec le nouveau hashé
     user.hashed_password = hash_password(data.new_password)
-    db.commit()  # Sauvegarde les modifications
-    # Retourne un message de succès
+    db.commit()
     return {"message": "Mot de passe réinitialisé avec succès"}
 
 # ========================================
 # ENDPOINTS POUR LES VÉHICULES
 # ========================================
-
 @app.get("/vehicles")
 def get_vehicles(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Récupère tous les véhicules de la base de données
+    """
+    Récupère la liste de tous les véhicules avec l'information si chacun est en favori de l'utilisateur courant.
+    """
+    # Récupère tous les véhicules
     vehicles_list = db.query(vehicles).all()
-    # Récupère les IDs des véhicules favoris de l'utilisateur connecté
+    # Récupère les IDs des favoris de l'utilisateur courant
     user_favorites = db.query(Favorite.car_id).filter(Favorite.user_id == current_user.id).all()
-    # Transforme en liste simple d'IDs
-    #Pour chaque élément fav dans user_favorites, prends sa valeur car_id et mets-la dans une nouvelle liste
     favorite_ids = [fav.car_id for fav in user_favorites]
-    
-    # Construit la réponse avec tous les détails des véhicules
+    # Construit la liste de réponse avec les champs nécessaires
     return [
         {
             "id": v.id,
             "name": v.name,
             "category": v.category,
-            "price": float(v.price) if v.price else 0.0,  # Conversion en float avec valeur par défaut
+            "price": float(v.price) if v.price else 0.0,
             "image": v.image,
             "transmission": v.transmission,
             "seats": v.seats,
@@ -359,7 +393,7 @@ def get_vehicles(current_user: User = Depends(get_current_user), db: Session = D
             "year": v.year,
             "fuel": v.fuel,
             "isAvailable": v.isAvailable,
-            "isFavorite": v.id in favorite_ids,  # Vérifie si le véhicule est dans les favoris
+            "isFavorite": v.id in favorite_ids,
             "isNew": v.isNew,
             "isBestChoice": v.isBestChoice,
             "rating": float(v.rating) if v.rating else 0.0,
@@ -374,19 +408,18 @@ def get_vehicles(current_user: User = Depends(get_current_user), db: Session = D
 # ========================================
 # ENDPOINTS POUR LES FAVORIS
 # ========================================
-
 @app.get("/favorites")
 def get_favorites(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Récupère toutes les entrées Favorites de l'utilisateur
+    """
+    Récupère la liste des véhicules favoris de l'utilisateur courant.
+    """
+    # Récupère toutes les entrées de favoris de l'utilisateur
     favorites = db.query(Favorite).filter(Favorite.user_id == current_user.id).all()
-    
-    # Initialise la liste des véhicules favoris
     favorite_cars = []
-    
-    # Pour chaque favori, récupère les détails du véhicule correspondant
     for fav in favorites:
+        # Pour chaque favori, récupère les détails du véhicule
         car = db.query(vehicles).filter(vehicles.id == fav.car_id).first()
-        if car:  # Vérifie que le véhicule existe toujours
+        if car:
             favorite_cars.append({
                 "id": car.id,
                 "name": car.name,
@@ -399,7 +432,7 @@ def get_favorites(current_user: User = Depends(get_current_user), db: Session = 
                 "year": car.year,
                 "fuel": car.fuel,
                 "isAvailable": car.isAvailable,
-                "isFavorite": True,  # Toujours True car ce sont les favoris
+                "isFavorite": True,
                 "isNew": car.isNew,
                 "isBestChoice": car.isBestChoice,
                 "rating": float(car.rating) if car.rating else 0.0,
@@ -408,104 +441,94 @@ def get_favorites(current_user: User = Depends(get_current_user), db: Session = 
                 "airConditioning": car.airConditioning,
                 "bluetooth": car.bluetooth
             })
-    
-    # Retourne la liste des véhicules favoris
     return favorite_cars
 
 @app.post("/favorites/add")
 def add_favorite(favorite: FavoriteRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """
+    Ajoute un véhicule aux favoris de l'utilisateur.
+    """
     # Vérifie que le véhicule existe
     car = db.query(vehicles).filter(vehicles.id == favorite.car_id).first()
     if not car:
         raise HTTPException(status_code=404, detail="Véhicule non trouvé")
-    
-    # Vérifie si le véhicule n'est pas déjà dans les favoris
+    # Vérifie que ce favori n'existe pas déjà
     existing_favorite = db.query(Favorite).filter(
         Favorite.user_id == current_user.id,
         Favorite.car_id == favorite.car_id
     ).first()
-    
     if existing_favorite:
         raise HTTPException(status_code=400, detail="Déjà dans les favoris")
-    
-    # Crée une nouvelle entrée Favorite
+    # Crée un nouveau favori
     new_favorite = Favorite(
         user_id=current_user.id,
         car_id=favorite.car_id
     )
-    
-    # Ajoute et sauvegarde en base
     db.add(new_favorite)
     db.commit()
-    
-    # Retourne un message de succès
     return {"message": "Ajouté aux favoris avec succès"}
 
 @app.delete("/favorites/remove/{car_id}")
 def remove_favorite(car_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Recherche l'entrée Favorite correspondante
+    """
+    Supprime un véhicule des favoris de l'utilisateur.
+    """
+    # Recherche le favori correspondant
     favorite = db.query(Favorite).filter(
         Favorite.user_id == current_user.id,
         Favorite.car_id == car_id
     ).first()
-    
-    # Vérifie si le favori existe
     if not favorite:
         raise HTTPException(status_code=404, detail="Favori non trouvé")
-    
-    # Supprime l'entrée de la base de données
+    # Supprime le favori
     db.delete(favorite)
     db.commit()
-    
-    # Retourne un message de succès
     return {"message": "Retiré des favoris avec succès"}
 
 @app.get("/favorites/check/{car_id}")
 def check_favorite(car_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    # Recherche l'entrée Favorite correspondante
+    """
+    Vérifie si un véhicule est dans les favoris de l'utilisateur.
+    """
     favorite = db.query(Favorite).filter(
         Favorite.user_id == current_user.id,
         Favorite.car_id == car_id
     ).first()
-    # Retourne un booléen indiquant si le véhicule est favori
     return {"isFavorite": favorite is not None}
+
 # ========================================
 # ENDPOINTS POUR LES RÉSERVATIONS
 # ========================================
-
 @app.post("/bookings", response_model=dict)
 def create_booking(
-    booking_data: BookingCreate, 
-    current_user: User = Depends(get_current_user), 
+    booking_data: BookingCreate,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Crée une nouvelle réservation pour l'utilisateur courant.
+    """
     try:
-        # Conversion des dates string en objets date
+        # Convertit les chaînes de date en objets date
         try:
-            #strptime:convertit une chaîne de caractères en objet datetime
             pickup_date = datetime.strptime(booking_data.pickup_date, "%Y-%m-%d").date()
             return_date = datetime.strptime(booking_data.return_date, "%Y-%m-%d").date()
         except ValueError:
-            # Erreur si le format de date est invalide
             raise HTTPException(status_code=400, detail="Format de date invalide. Utilisez YYYY-MM-DD")
-        
-        # Vérifie que le véhicule existe
+        # Vérifie que la voiture existe
         car = db.query(vehicles).filter(vehicles.id == booking_data.car_id).first()
         if not car:
             raise HTTPException(status_code=404, detail="Voiture non trouvée")
-        
-        # Vérifie la disponibilité du véhicule
+        # Vérifie la disponibilité
         if not car.isAvailable:
             raise HTTPException(status_code=400, detail="Cette voiture n'est pas disponible")
-        
-        # Vérifie que la date de retour est après la date de prise en charge
+        # Vérifie que la date de retour est postérieure à la date de prise en charge
         if return_date <= pickup_date:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail=f"La date de retour ({return_date}) doit être après la date de prise en charge ({pickup_date})"
             )
-        
-        # Crée la nouvelle réservation
+        # Crée la réservation avec le statut "En attente"
         new_booking = Booking(
             user_id=current_user.id,
             car_id=booking_data.car_id,
@@ -513,55 +536,44 @@ def create_booking(
             pickup_date=pickup_date,
             return_date=return_date,
             total_price=booking_data.total_price,
-            status="En attente"  # Statut initial
+            status="En attente"
         )
-        
-        # Ajoute et sauvegarde la réservation
         db.add(new_booking)
         db.commit()
         db.refresh(new_booking)
-        
-        # Importation nécessaire pour la comparaison de dates
+        # Si la réservation commence aujourd'hui ou avant, marque la voiture comme non disponible
         from datetime import date as date_class
-
-        #rendre le véhicule indisponible si la réservation commence aujourd'hui ou avant
         if pickup_date <= date_class.today():
             car.isAvailable = False
             db.commit()
-        # Retourne une réponse de succès
         return {
             "success": True,
             "message": "Réservation créée avec succès",
             "booking_id": new_booking.id,
             "status": new_booking.status
         }
-    
-    # Gère les exceptions HTTP spécifiques (erreurs métier)
     except HTTPException as he:
         raise he
-    # Gère toutes les autres exceptions (erreurs serveur)
     except Exception as e:
-        db.rollback()  # Annule la transaction en cas d'erreur
+        db.rollback()
         print(f"Erreur lors de la création de la réservation: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 @app.get("/my-bookings")
 def get_user_bookings(
-    current_user: User = Depends(get_current_user), 
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Récupère toutes les réservations de l'utilisateur courant, triées par date de création descendante.
+    """
     try:
-        # Récupère toutes les réservations de l'utilisateur, triées par date
         bookings = db.query(Booking).filter(
             Booking.user_id == current_user.id
         ).order_by(Booking.created_at.desc()).all()
-        
-        # Construit la réponse avec les détails de chaque réservation
         result = []
         for booking in bookings:
-            # Récupère les informations du véhicule associé
             car = db.query(vehicles).filter(vehicles.id == booking.car_id).first()
-            
             result.append({
                 "id": booking.id,
                 "car_id": booking.car_id,
@@ -574,30 +586,26 @@ def get_user_bookings(
                 "status": booking.status,
                 "created_at": booking.created_at.strftime("%Y-%m-%d %H:%M:%S") if booking.created_at else None
             })
-        
         return result
-    
     except Exception as e:
         print(f"Erreur lors de la récupération des réservations: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
-# ========================================
-# ENDPOINT DE SANTÉ (HEALTH CHECK)
-# ========================================
-
 @app.get("/health")
 def health_check():
-    #Endpoint simple pour vérifier que l'API est en ligne et fonctionne.
-  
+    """
+    Endpoint simple pour vérifier que l'API est en ligne.
+    """
     return {"status": "OK", "message": "API is running"}
 
 # ========================================
 # FONCTIONS ADMINISTRATEUR
 # ========================================
-
 def get_current_admin(current_user: User = Depends(get_current_user)):
+    """
+    Dépendance pour vérifier que l'utilisateur courant est un administrateur.
+    """
     if current_user.role != "admin":
-        # Retourne une erreur 403 (interdit) si l'utilisateur n'est pas admin
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Accès refusé. Droits administrateur requis."
@@ -606,21 +614,18 @@ def get_current_admin(current_user: User = Depends(get_current_user)):
 
 @app.get("/admin/bookings")
 def get_all_bookings(
-    current_admin: User = Depends(get_current_admin),  # Vérification des droits admin
+    current_admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
+    """
+    Récupère toutes les réservations (admin seulement).
+    """
     try:
-        # Récupère toutes les réservations, triées par date
         bookings = db.query(Booking).order_by(Booking.created_at.desc()).all()
-        
-        # Construit la réponse détaillée avec infos utilisateur et véhicule
         result = []
         for booking in bookings:
-            # Récupère les infos du véhicule
             car = db.query(vehicles).filter(vehicles.id == booking.car_id).first()
-            # Récupère les infos de l'utilisateur
             user = db.query(User).filter(User.id == booking.user_id).first()
-            #append():méthode des listes Python qui sert à ajouter un élément à la fin d’une liste existante.
             result.append({
                 "id": booking.id,
                 "car_id": booking.car_id,
@@ -636,76 +641,58 @@ def get_all_bookings(
                 "status": booking.status,
                 "created_at": booking.created_at.strftime("%Y-%m-%d %H:%M:%S") if booking.created_at else None
             })
-        
         return result
-    
     except Exception as e:
         print(f"Erreur lors de la récupération des réservations: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
-#PATCH: méthode qui permet de modifier partiellement une ressource existante sur le serveur
+
 @app.patch("/admin/bookings/{booking_id}/status")
 def update_booking_status(
     booking_id: int,
-    status: str,  # Le nouveau statut à appliquer
+    status: str,
     current_admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
+    """
+    Met à jour le statut d'une réservation (admin seulement).
+    """
     try:
         from datetime import date as date_class
-        
-        # Liste des statuts valides
         valid_statuses = ["En attente", "Confirmée", "Annulée", "Terminée"]
         if status not in valid_statuses:
             raise HTTPException(
                 status_code=400,
                 detail=f"Statut invalide. Valeurs acceptées: {', '.join(valid_statuses)}"
             )
-        
-        # Récupère la réservation par son ID
         booking = db.query(Booking).filter(Booking.id == booking_id).first()
-        
         if not booking:
             raise HTTPException(status_code=404, detail="Réservation non trouvée")
-        
-        # Sauvegarde l'ancien statut pour le message de réponse
         old_status = booking.status
-        
-        # Met à jour le statut
         booking.status = status
-        
-        # Récupère le véhicule associé
         car = db.query(vehicles).filter(vehicles.id == booking.car_id).first()
+        # Gestion de la disponibilité de la voiture en fonction du statut
         if car:
-            # Si la réservation est annulée ou terminée
             if status in ["Annulée", "Terminée"]:
-                # Vérifie s'il existe d'autres réservations actives pour cette voiture
+                # Vérifie s'il y a d'autres réservations actives sur cette voiture
                 other_active_bookings = db.query(Booking).filter(
                     Booking.car_id == booking.car_id,
-                    Booking.id != booking_id,  # Exclut la réservation actuelle
-                    Booking.status.in_(["Confirmée", "En attente"]),  # Réservations actives
-                    Booking.pickup_date <= date_class.today(),  # Commencées ou en cours
-                    Booking.return_date >= date_class.today()  # Non terminées
+                    Booking.id != booking_id,
+                    Booking.status.in_(["Confirmée", "En attente"]),
+                    Booking.pickup_date <= date_class.today(),
+                    Booking.return_date >= date_class.today()
                 ).first()
-                
-                # Rend disponible seulement s'il n'y a pas d'autres réservations actives
                 if not other_active_bookings:
                     car.isAvailable = True
-            
-            # Si la réservation est confirmée
             elif status == "Confirmée":
-                # Rend indisponible seulement si elle commence aujourd'hui ou avant
                 if booking.pickup_date <= date_class.today():
                     car.isAvailable = False
-        
         db.commit()
-        
         return {
             "success": True,
             "message": f"Statut mis à jour de '{old_status}' à '{status}'",
             "booking_id": booking_id,
             "new_status": status
         }
-    
     except HTTPException as he:
         raise he
     except Exception as e:
@@ -719,27 +706,22 @@ def delete_booking(
     current_admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
+    """
+    Supprime une réservation (admin seulement) et rend la voiture disponible si nécessaire.
+    """
     try:
-        # Récupère la réservation
         booking = db.query(Booking).filter(Booking.id == booking_id).first()
-        
         if not booking:
             raise HTTPException(status_code=404, detail="Réservation non trouvé")
-        
-        # Rend le véhicule disponible
         car = db.query(vehicles).filter(vehicles.id == booking.car_id).first()
         if car:
             car.isAvailable = True
-        
-        # Supprime la réservation
         db.delete(booking)
         db.commit()
-        
         return {
             "success": True,
             "message": "Réservation supprimée avec succès"
         }
-    
     except HTTPException as he:
         raise he
     except Exception as e:
@@ -750,19 +732,19 @@ def delete_booking(
 # ========================================
 # ENDPOINT DE MISE À JOUR DU PROFIL
 # ========================================
-#PUT:méthode qui sert à mettre à jour complètement une ressource existante sur le serveur ou à la créer si elle n’existe pas.
 @app.put("/update-profile/")
 async def update_profile(
     profile_data: UpdateProfileRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Met à jour le profil de l'utilisateur (nom, email, mot de passe).
+    """
     try:
-        # Logs de débogage (à retirer en production)
         print(f"📥 Données reçues: {profile_data}")
         print(f"👤 Utilisateur actuel: {current_user.username} ({current_user.email})")
-        
-        # Vérifie le mot de passe actuel si fourni (nécessaire pour changer le mot de passe)
+        # Si un mot de passe actuel est fourni, on vérifie qu'il correspond
         if profile_data.current_password:
             if not verify_password(profile_data.current_password, current_user.hashed_password):
                 return JSONResponse(
@@ -770,16 +752,12 @@ async def update_profile(
                     content={"success": False, "message": "Mot de passe actuel incorrect"}
                 )
             print("✅ Mot de passe actuel vérifié")
-        
-        # Variable pour suivre si des modifications ont été faites
         updates_made = False
-        
         # Mise à jour du nom d'utilisateur
         if profile_data.username and profile_data.username != current_user.username:
-            # Vérifie si le nouveau nom d'utilisateur n'est pas déjà utilisé par un autre utilisateur
             existing_user = db.query(User).filter(
-                User.username == profile_data.username, 
-                User.id != current_user.id  # Exclut l'utilisateur courant
+                User.username == profile_data.username,
+                User.id != current_user.id
             ).first()
             if existing_user:
                 return JSONResponse(
@@ -789,12 +767,10 @@ async def update_profile(
             current_user.username = profile_data.username
             updates_made = True
             print(f"✅ Username mis à jour: {profile_data.username}")
-        
         # Mise à jour de l'email
         if profile_data.email and profile_data.email != current_user.email:
-            # Vérifie si le nouvel email n'est pas déjà utilisé
             existing_user = db.query(User).filter(
-                User.email == profile_data.email, 
+                User.email == profile_data.email,
                 User.id != current_user.id
             ).first()
             if existing_user:
@@ -805,10 +781,8 @@ async def update_profile(
             current_user.email = profile_data.email
             updates_made = True
             print(f"✅ Email mis à jour: {profile_data.email}")
-        
         # Mise à jour du mot de passe
         if profile_data.new_password:
-            # Pour changer le mot de passe, l'utilisateur doit fournir le mot de passe actuel
             if not profile_data.current_password:
                 return JSONResponse(
                     status_code=400,
@@ -817,21 +791,14 @@ async def update_profile(
             current_user.hashed_password = hash_password(profile_data.new_password)
             updates_made = True
             print("✅ Mot de passe mis à jour")
-        
-        # Vérifie si au moins une modification a été effectuée
         if not updates_made:
             return JSONResponse(
                 status_code=400,
                 content={"success": False, "message": "Aucune modification détectée"}
             )
-        
-        # Valide et sauvegarde les changements
         db.commit()
-        db.refresh(current_user)  # Rafraîchit l'objet avec les nouvelles valeurs
-        
+        db.refresh(current_user)
         print("✅ Profil mis à jour avec succès")
-        
-        # Retourne une réponse de succès avec les nouvelles informations utilisateur
         return JSONResponse(
             status_code=200,
             content={
@@ -840,9 +807,7 @@ async def update_profile(
                 "user": user_response(current_user)
             }
         )
-        
     except Exception as e:
-        # En cas d'erreur, annule la transaction
         db.rollback()
         print(f"❌ Erreur serveur: {e}")
         return JSONResponse(
@@ -850,19 +815,59 @@ async def update_profile(
             content={"success": False, "message": f"Erreur serveur: {str(e)}"}
         )
 
+# ========================================
+# ENDPOINT UPLOAD D'IMAGE
+# ========================================
+@app.post("/upload-image/")
+async def upload_image(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Endpoint pour uploader une image (par exemple pour l'avatar).
+    """
+    try:
+        # Vérification du type MIME
+        allowed_types = ["image/jpeg", "image/png", "image/jpg", "image/webp"]
+        if file.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=400,
+                detail="Type de fichier non autorisé. Utilisez JPG, PNG ou WEBP."
+            )
+        # Génération d'un nom de fichier unique
+        extension = file.filename.split(".")[-1]
+        unique_filename = f"{uuid.uuid4()}.{extension}"
+        file_path = f"{UPLOAD_FOLDER}/{unique_filename}"
+        # Sauvegarde du fichier sur le disque
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        # Construction de l'URL publique
+        image_url = f"http://localhost:8000/static/images/{unique_filename}"
+        print(f"✅ Image uploadée : {file_path} → {image_url}")
+        return {
+            "success": True,
+            "url": image_url,
+            "filename": unique_filename
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Erreur upload image: {e}")
+        raise HTTPException(status_code=500, detail=f"Erreur lors de l'upload: {str(e)}")
 
 # ========================================
 # ENDPOINTS ADMIN POUR LA GESTION DES VÉHICULES
 # ========================================
-
 @app.post("/admin/vehicles")
 def add_vehicle(
-    vehicle_data: dict,  # Accepte un dictionnaire flexible
-    current_admin: User = Depends(get_current_admin),  # Vérification admin
+    vehicle_data: dict,
+    current_admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
+    """
+    Ajoute un nouveau véhicule (admin seulement).
+    """
     try:
-        # Crée un nouvel objet véhicule avec les données fournies
         new_vehicle = vehicles(
             name=vehicle_data['name'],
             category=vehicle_data['category'],
@@ -873,7 +878,7 @@ def add_vehicle(
             engine=vehicle_data['engine'],
             year=vehicle_data['year'],
             fuel=vehicle_data['fuel'],
-            isAvailable=vehicle_data.get('isAvailable', True),  # Valeur par défaut
+            isAvailable=vehicle_data.get('isAvailable', True),
             isNew=vehicle_data.get('isNew', False),
             isBestChoice=vehicle_data.get('isBestChoice', False),
             rating=vehicle_data.get('rating', 0.0),
@@ -882,18 +887,14 @@ def add_vehicle(
             airConditioning=vehicle_data.get('airConditioning', True),
             bluetooth=vehicle_data.get('bluetooth', True),
         )
-        
-        # Ajoute et sauvegarde le véhicule
         db.add(new_vehicle)
         db.commit()
         db.refresh(new_vehicle)
-        
         return {
             "success": True,
             "message": "Véhicule ajouté avec succès",
-            "vehicle_id": new_vehicle.id  # Retourne l'ID généré
+            "vehicle_id": new_vehicle.id
         }
-    
     except Exception as e:
         db.rollback()
         print(f"Erreur lors de l'ajout: {e}")
@@ -905,39 +906,32 @@ def delete_vehicle(
     current_admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
+    """
+    Supprime un véhicule (admin seulement) après vérification qu'il n'a pas de réservations actives.
+    """
     try:
-        # Récupère le véhicule par son ID
         vehicle = db.query(vehicles).filter(vehicles.id == vehicle_id).first()
-        
         if not vehicle:
             raise HTTPException(status_code=404, detail="Véhicule non trouvé")
-        
-        # Vérifie s'il y a des réservations actives pour ce véhicule
+        # Vérifie s'il y a des réservations actives sur ce véhicule
         active_bookings = db.query(Booking).filter(
             Booking.car_id == vehicle_id,
-            Booking.status.in_(["En attente", "Confirmée"])  # Réservations non terminées
+            Booking.status.in_(["En attente", "Confirmée"])
         ).count()
-        
-        # Empêche la suppression si des réservations actives existent
         if active_bookings > 0:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail=f"Impossible de supprimer : {active_bookings} réservation(s) active(s)"
             )
-        
-        # Supprime les favoris associés (si non géré automatiquement par CASCADE)
+        # Supprime les favoris liés à ce véhicule
         db.query(Favorite).filter(Favorite.car_id == vehicle_id).delete()
-        
-        # Supprime le véhicule
         db.delete(vehicle)
         db.commit()
-        
         return {
             "success": True,
             "message": "Véhicule supprimé avec succès",
             "vehicle_id": vehicle_id
         }
-    
     except HTTPException as he:
         raise he
     except Exception as e:
@@ -952,15 +946,14 @@ def update_vehicle(
     current_admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db)
 ):
+    """
+    Met à jour les informations d'un véhicule (admin seulement).
+    """
     try:
-        # Récupère le véhicule existant
         vehicle = db.query(vehicles).filter(vehicles.id == vehicle_id).first()
-        
         if not vehicle:
             raise HTTPException(status_code=404, detail="Véhicule non trouvé")
-        
-        # Met à jour chaque champ fourni dans vehicle_data
-        # Utilise des conditions pour ne modifier que les champs présents
+        # Mise à jour conditionnelle de chaque champ si présent dans vehicle_data
         if 'name' in vehicle_data:
             vehicle.name = vehicle_data['name']
         if 'category' in vehicle_data:
@@ -995,12 +988,8 @@ def update_vehicle(
             vehicle.airConditioning = vehicle_data['airConditioning']
         if 'bluetooth' in vehicle_data:
             vehicle.bluetooth = vehicle_data['bluetooth']
-        
-        # Sauvegarde les modifications
         db.commit()
-        db.refresh(vehicle)  # Rafraîchit avec les nouvelles valeurs
-        
-        # Retourne les détails complets du véhicule mis à jour
+        db.refresh(vehicle)
         return {
             "success": True,
             "message": "Véhicule mis à jour avec succès",
@@ -1025,7 +1014,6 @@ def update_vehicle(
                 "bluetooth": vehicle.bluetooth
             }
         }
-    
     except HTTPException as he:
         raise he
     except Exception as e:
@@ -1036,28 +1024,24 @@ def update_vehicle(
 # ========================================
 # ENDPOINTS POUR LES CONVERSATIONS (CHAT)
 # ========================================
-
 @app.post("/conversations/", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)
 def create_conversation(
     conversation_data: ConversationCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Crée une nouvelle conversation pour l'utilisateur courant.
+    """
     try:
-        # Crée un nouvel objet Conversation
         new_conversation = Conversation(
-            user_id=current_user.id,  # Associe à l'utilisateur courant
-            title=conversation_data.title  # Utilise le titre fourni ou la valeur par défaut
+            user_id=current_user.id,
+            title=conversation_data.title
         )
-        
-        # Ajoute et sauvegarde la conversation
         db.add(new_conversation)
         db.commit()
         db.refresh(new_conversation)
-        
-        # Retourne la conversation créée (automatiquement convertie par response_model)
         return new_conversation
-    
     except Exception as e:
         db.rollback()
         print(f"❌ Erreur lors de la création de la conversation: {e}")
@@ -1067,28 +1051,20 @@ def create_conversation(
 def get_user_conversations(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-    include_inactive: bool = False  # Paramètre optionnel pour inclure les conversations inactives
+    include_inactive: bool = False
 ):
-   
+    """
+    Récupère la liste des conversations de l'utilisateur courant.
+    """
     try:
-        # Construction de la requête de base
         query = db.query(Conversation).filter(Conversation.user_id == current_user.id)
-        
-        # Filtre par statut actif si le paramètre est False
         if not include_inactive:
             query = query.filter(Conversation.is_active == True)
-        
-        # Exécute la requête avec tri par date de mise à jour (plus récentes d'abord)
         conversations = query.order_by(Conversation.updated_at.desc()).all()
-        
-        # Prépare la réponse avec des métadonnées supplémentaires
         result = []
         for conv in conversations:
-            # Compte les messages dans la conversation
             message_count = len(conv.messages)
-            # Récupère le dernier message (si existant)
             last_message = conv.messages[-1].content if conv.messages else None
-            
             result.append({
                 "id": conv.id,
                 "title": conv.title,
@@ -1097,9 +1073,7 @@ def get_user_conversations(
                 "message_count": message_count,
                 "last_message": last_message
             })
-        
         return result
-    
     except Exception as e:
         print(f"❌ Erreur lors de la récupération des conversations: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
@@ -1110,24 +1084,20 @@ def get_conversation(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-
+    """
+    Récupère une conversation spécifique avec ses messages.
+    """
     try:
-        # Recherche la conversation avec vérification de propriété
         conversation = db.query(Conversation).filter(
             Conversation.id == conversation_id,
-            Conversation.user_id == current_user.id  # Sécurité : vérifie l'appartenance
+            Conversation.user_id == current_user.id
         ).first()
-        
-        # Vérifie si la conversation existe
         if not conversation:
             raise HTTPException(
-                status_code=404, 
+                status_code=404,
                 detail="Conversation non trouvée ou vous n'avez pas accès à cette conversation"
             )
-        
-        # Retourne la conversation complète avec ses messages
         return conversation
-    
     except HTTPException as he:
         raise he
     except Exception as e:
@@ -1141,36 +1111,29 @@ def add_message(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Ajoute un message dans une conversation (côté utilisateur).
+    """
     try:
-        # Vérifie que la conversation existe et appartient à l'utilisateur
         conversation = db.query(Conversation).filter(
             Conversation.id == conversation_id,
             Conversation.user_id == current_user.id
         ).first()
-        
         if not conversation:
             raise HTTPException(
-                status_code=404, 
+                status_code=404,
                 detail="Conversation non trouvée ou vous n'avez pas accès à cette conversation"
             )
-        
-        # Crée le nouveau message
         new_message = Message(
             conversation_id=conversation_id,
             content=message_data.content,
-            is_user=message_data.is_user  # True pour utilisateur, False pour assistant
+            is_user=message_data.is_user
         )
-        
         db.add(new_message)
-        
-        # Met à jour la date de modification de la conversation
         conversation.updated_at = datetime.now()
-        
         db.commit()
         db.refresh(new_message)
-        
         return new_message
-    
     except HTTPException as he:
         raise he
     except Exception as e:
@@ -1181,32 +1144,28 @@ def add_message(
 @app.put("/conversations/{conversation_id}", response_model=ConversationResponse)
 def update_conversation(
     conversation_id: int,
-    title: str,  # Nouveau titre fourni comme paramètre de requête
+    title: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Met à jour le titre d'une conversation.
+    """
     try:
-        # Vérifie que la conversation existe et appartient à l'utilisateur
         conversation = db.query(Conversation).filter(
             Conversation.id == conversation_id,
             Conversation.user_id == current_user.id
         ).first()
-        
         if not conversation:
             raise HTTPException(
-                status_code=404, 
+                status_code=404,
                 detail="Conversation non trouvée ou vous n'avez pas accès à cette conversation"
             )
-        
-        # Met à jour le titre
         conversation.title = title
-        conversation.updated_at = datetime.now()  # Met à jour la date de modification
-        
+        conversation.updated_at = datetime.now()
         db.commit()
         db.refresh(conversation)
-        
         return conversation
-    
     except HTTPException as he:
         raise he
     except Exception as e:
@@ -1220,28 +1179,25 @@ def delete_conversation(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Supprime (désactive) une conversation.
+    """
     try:
-        # Vérifie que la conversation existe et appartient à l'utilisateur
         conversation = db.query(Conversation).filter(
             Conversation.id == conversation_id,
             Conversation.user_id == current_user.id
         ).first()
-        
         if not conversation:
             raise HTTPException(
-                status_code=404, 
+                status_code=404,
                 detail="Conversation non trouvée ou vous n'avez pas accès à cette conversation"
             )
-        
-        # Suppression logique (au lieu de suppression physique)
         conversation.is_active = False
         db.commit()
-        
         return {
             "success": True,
             "message": "Conversation supprimée avec succès"
         }
-    
     except HTTPException as he:
         raise he
     except Exception as e:
@@ -1256,44 +1212,35 @@ def delete_message(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Supprime un message spécifique d'une conversation.
+    """
     try:
-        # Vérifie que la conversation existe et appartient à l'utilisateur
         conversation = db.query(Conversation).filter(
             Conversation.id == conversation_id,
             Conversation.user_id == current_user.id
         ).first()
-        
         if not conversation:
             raise HTTPException(
-                status_code=404, 
+                status_code=404,
                 detail="Conversation non trouvée ou vous n'avez pas accès à cette conversation"
             )
-        
-        # Vérifie que le message existe dans cette conversation
         message = db.query(Message).filter(
             Message.id == message_id,
             Message.conversation_id == conversation_id
         ).first()
-        
         if not message:
             raise HTTPException(
-                status_code=404, 
+                status_code=404,
                 detail="Message non trouvé dans cette conversation"
             )
-        
-        # Supprime le message
         db.delete(message)
-        
-        # Met à jour la date de modification de la conversation
         conversation.updated_at = datetime.now()
-        
         db.commit()
-        
         return {
             "success": True,
             "message": "Message supprimé avec succès"
         }
-    
     except HTTPException as he:
         raise he
     except Exception as e:
@@ -1307,37 +1254,33 @@ def export_conversation(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-  
+    """
+    Exporte une conversation au format JSON.
+    """
     try:
-        # Vérifie que la conversation existe et appartient à l'utilisateur
         conversation = db.query(Conversation).filter(
             Conversation.id == conversation_id,
             Conversation.user_id == current_user.id
         ).first()
-        
         if not conversation:
             raise HTTPException(
-                status_code=404, 
+                status_code=404,
                 detail="Conversation non trouvée ou vous n'avez pas accès à cette conversation"
             )
-        
-        # Prépare les données d'export au format structuré
         export_data = {
             "conversation_id": conversation.id,
             "title": conversation.title,
-            "created_at": conversation.created_at.isoformat(),  # Format ISO standard
+            "created_at": conversation.created_at.isoformat(),
             "messages": [
                 {
-                    "sender": "user" if msg.is_user else "assistant",  # Étiquette lisible
+                    "sender": "user" if msg.is_user else "assistant",
                     "content": msg.content,
                     "timestamp": msg.created_at.isoformat()
                 }
-                for msg in conversation.messages  # Parcourt tous les messages
+                for msg in conversation.messages
             ]
         }
-        
         return export_data
-    
     except HTTPException as he:
         raise he
     except Exception as e:
@@ -1345,10 +1288,13 @@ def export_conversation(
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 # ========================================
-# FONCTION DE GÉNÉRATION DE RÉPONSE POUR L'ASSISTANT
+# FONCTION DE GÉNÉRATION DE RÉPONSE POUR L'ASSISTANT (AMÉLIORÉE)
 # ========================================
-
 def generate_assistant_response(user_message: str, current_user: User, db: Session) -> str:
+    """
+    Génère une réponse intelligente de l'assistant en fonction du message utilisateur.
+    Utilise des règles et des données contextuelles.
+    """
     # Convertit le message en minuscules pour une comparaison insensible à la casse
     user_message_lower = user_message.lower()
     
@@ -1362,8 +1308,8 @@ def generate_assistant_response(user_message: str, current_user: User, db: Sessi
     # RÉPONSES PRÉDÉFINIES POUR LES QUESTIONS COURANTES
     # ========================================
     
-    # Question : Comment réserver ?
-    if user_message_lower == "comment réserver ?" or "réserver" in user_message_lower and "comment" in user_message_lower:
+    # --- 1. COMMENT RÉSERVER ? ---
+    if user_message_lower == "comment réserver ?" or ("réserver" in user_message_lower and "comment" in user_message_lower):
         return """📋 **Comment réserver un véhicule :**
         
 1. **Parcourez** notre catalogue de véhicules dans l'onglet "Nos voitures"
@@ -1379,22 +1325,18 @@ def generate_assistant_response(user_message: str, current_user: User, db: Sessi
 💰 **Paiement :** Le paiement se fait à la prise du véhicule, ou en ligne selon l'option choisie.
 📞 **Besoin d'aide ?** Contactez-nous au 71 234 567"""
     
-    # Question : Quels sont les tarifs ?
-    elif user_message_lower == "quels sont les tarifs ?" or "tarifs" in user_message_lower or "prix" in user_message_lower:
+    # --- 2. TARIFS / PRIX (suggestion "Quels sont les tarifs ?") ---
+    # Détecte les mots "tarifs", "prix", "combien", "coût", "tarif"
+    elif (user_message_lower == "quels sont les tarifs ?" or 
+          any(word in user_message_lower for word in ['tarifs', 'tarif', 'prix', 'combien', 'coût'])):
         # Calcule les prix moyens par catégorie
         categories = {}
-        # On parcourt tous les objets "car" dans la liste all_cars
         for car in all_cars:
-             # On récupère la catégorie de la voiture (ex: 'SUV', 'Citadine', 'Berline')
             cat = car.category
-            # Si cette catégorie n'existe pas encore dans le dictionnaire "categories", on l'initialise avec une liste vide
             if cat not in categories:
                 categories[cat] = []
-                 # On ajoute le prix de la voiture dans la liste correspondant à sa catégorie
-    # On convertit le prix en float au cas où il serait stocké comme chaîne de caractères
             categories[cat].append(float(car.price))
         
-        # Construit la réponse avec les informations de prix
         price_info = "💵 **Tarifs par catégorie (par jour) :**\n\n"
         for cat, prices in categories.items():
             if prices:
@@ -1411,8 +1353,9 @@ def generate_assistant_response(user_message: str, current_user: User, db: Sessi
         
         return price_info
     
-    # Question : Ajouter aux favoris
-    elif user_message_lower == "ajouter aux favoris" or "favoris" in user_message_lower and "ajouter" in user_message_lower:
+    # --- 3. FAVORIS (suggestion "Ajouter aux favoris") ---
+    # Détecte "favoris", "favori", "ajouter aux favoris", "mes favoris"
+    elif any(word in user_message_lower for word in ['favoris', 'favori']):
         favorite_count = len(user_favorites)
         if favorite_count > 0:
             # Récupère les noms des derniers véhicules favoris
@@ -1456,12 +1399,11 @@ Derniers ajouts : {cars_list}
 
 🎯 **Conseil :** Ajoutez plusieurs véhicules pour comparer et choisir plus facilement !"""
     
-    # Question : Types de véhicules
+    # --- 4. TYPES DE VÉHICULES (suggestion "Types de véhicules") ---
     elif user_message_lower == "types de véhicules" or "catégories" in user_message_lower:
         # Compte les véhicules par catégorie
         category_counts = {}
         category_examples = {}
-        
         for car in all_cars:
             cat = car.category
             if cat not in category_counts:
@@ -1469,15 +1411,12 @@ Derniers ajouts : {cars_list}
                 category_examples[cat] = car.name
             category_counts[cat] += 1
         
-        # Construit la réponse détaillée
         response = "🚗 **Nos catégories de véhicules :**\n\n"
         for cat, count in category_counts.items():
             example = category_examples.get(cat, "")
             response += f"• **{cat}** ({count} modèles)\n"
             response += f"  *Exemple : {example}*\n"
             response += f"  *Idéal pour : "
-            
-            # Ajoute une description contextuelle par catégorie
             if cat == "Économique":
                 response += "petits budgets, ville*\n"
             elif cat == "Citadine":
@@ -1491,16 +1430,14 @@ Derniers ajouts : {cars_list}
             else:
                 response += "usage général*\n"
         
-        # Ajoute des conseils de choix
         response += "\n🔍 **Comment choisir ?**\n"
         response += "• Pour la ville : Économique ou Citadine\n"
         response += "• Pour la famille : Familiale ou SUV\n"
         response += "• Pour le confort : Compacte\n"
         response += "• Pour les voyages : SUV\n"
-        
         return response
     
-    # Question : Contacter le support
+    # --- 5. CONTACTER LE SUPPORT (suggestion "Contacter le support") ---
     elif user_message_lower == "contacter le support" or "support" in user_message_lower:
         return """📞 **Contact et support :**
         
@@ -1527,39 +1464,39 @@ Derniers ajouts : {cars_list}
 
 💡 **Conseil :** Pour une réponse rapide, appelez-nous pendant les heures d'ouverture."""
     
-    # Question : Véhicules disponibles
+    # --- 6. VÉHICULES DISPONIBLES (suggestion "Véhicules disponibles") ---
     elif user_message_lower == "véhicules disponibles" or "disponibles" in user_message_lower:
         # Récupère quelques véhicules disponibles
         available_cars_list = db.query(vehicles).filter(
             vehicles.isAvailable == True
-        ).limit(5).all()  # Limite à 5 résultats
+        ).limit(5).all()
         
         response = f"✅ **Véhicules disponibles :**\n\n"
         response += f"Nous avons actuellement **{available_cars} véhicules** disponibles à la location.\n\n"
-        
         if available_cars_list:
             response += "**Quelques modèles disponibles :**\n"
             for car in available_cars_list:
                 response += f"• **{car.name}** ({car.category}) - {float(car.price):.0f} TND/jour\n"
-            
             response += f"\n💡 **Conseil :** {available_cars} choix disponibles. Réservez vite pour garantir votre véhicule préféré !\n"
         else:
             response += "Aucun véhicule disponible pour le moment.\n"
         
-        # Informations sur les filtres disponibles
         response += "\n**Filtres disponibles :**\n"
         response += "• Par prix (0 - 500 TND)\n"
         response += "• Par catégorie (Économique, SUV...)\n"
         response += "• Par disponibilité\n"
         response += "• Par nombre de places\n"
-        
         response += "\n🔍 **Comment voir tous les véhicules ?**\n"
         response += "Allez dans 'Nos voitures' et utilisez les filtres pour trouver le véhicule parfait !"
-        
         return response
     
-    # Question : Modifier mon profil
-    elif user_message_lower == "modifier mon profil" or "profil" in user_message_lower and ("modifier" in user_message_lower or "changer" in user_message_lower):
+    # --- 7. MODIFIER LE PROFIL (suggestion "Modifier mon profil") ---
+    # Détecte "profil", "mon profil", ou des phrases avec "modifier" + "profil/compte"
+    elif (user_message_lower == "modifier mon profil" or
+          user_message_lower == "profil" or
+          user_message_lower == "mon profil" or
+          (any(word in user_message_lower for word in ['profil', 'mon compte']) and
+           any(word in user_message_lower for word in ['modifier', 'changer']))):
         return """👤 **Modifier votre profil :**
         
 **Pour modifier vos informations personnelles :**
@@ -1585,8 +1522,26 @@ Vos données sont cryptées et protégées selon les normes RGPD.
 
 💡 **Besoin d'aide ?** Contactez le support si vous rencontrez des difficultés."""
     
+    # --- 8. RÉPONSE GÉNÉRIQUE SUR LES VÉHICULES (si "véhicule(s)" ou "voiture(s)" sans être pris par les cas spécifiques) ---
+    # Cette condition vient après les cas spécifiques "types de véhicules" et "véhicules disponibles"
+    elif any(word in user_message_lower for word in ['véhicule', 'véhicules', 'voiture', 'voitures']):
+        return """🚗 **Notre gamme de véhicules :**
+
+Nous proposons une large sélection de véhicules adaptés à tous vos besoins :
+
+• **Économique** – Idéal pour petits budgets et déplacements urbains.
+• **Citadine** – Confortable et maniable en ville.
+• **Familiale** – Espace et confort pour les voyages en famille.
+• **SUV** – Polyvalent, parfait pour l'aventure et le tout-terrain.
+• **Compacte** – Un bon compromis entre taille et confort.
+
+🔍 **Comment explorer notre catalogue ?**
+Rendez-vous dans l'onglet **"Nos voitures"** pour voir tous les modèles disponibles. Vous pouvez filtrer par catégorie, prix, nombre de places, etc.
+
+💬 Souhaitez-vous plus d'informations sur une catégorie en particulier ou voir les véhicules actuellement disponibles ?"""
+    
     # ========================================
-    # RÉPONSES GÉNÉRALES BASÉES SUR LES MOTS-CLÉS
+    # RÉPONSES GÉNÉRALES BASÉES SUR LES MOTS-CLÉS (salutations, réservations, annulations, remerciements)
     # ========================================
     
     # Salutations
@@ -1596,7 +1551,6 @@ Vos données sont cryptées et protégées selon les normes RGPD.
     # Réservations
     elif any(word in user_message_lower for word in ['réservation', 'réserver', 'louer']):
         if user_bookings:
-            # Filtre les réservations actives
             active_bookings = [b for b in user_bookings if b.status in ["Confirmée", "En attente"]]
             if active_bookings:
                 return f"Vous avez {len(active_bookings)} réservation(s) active(s). Allez dans 'Mes Réservations' pour les gérer."
@@ -1616,7 +1570,6 @@ Vos données sont cryptées et protégées selon les normes RGPD.
     # RÉPONSE PAR DÉFAUT (QUESTION NON RECONNUE)
     # ========================================
     else:
-        # Réponse générique avec suggestions
         default_responses = [
             "Je comprends que vous dites : '{}'\n\nVoici ce que je peux vous aider :".format(user_message),
             "• Réserver un véhicule 📅",
@@ -1633,26 +1586,26 @@ Vos données sont cryptées et protégées selon les normes RGPD.
 # ========================================
 # ENDPOINT PRINCIPAL POUR L'ASSISTANT DE CHAT
 # ========================================
-
 @app.post("/assistant/chat")
 async def chat_with_assistant(
-    data: ChatInput, 
+    data: ChatInput,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """
+    Endpoint pour envoyer un message à l'assistant et recevoir une réponse automatique.
+    """
     try:
-        # Vérifie que la conversation existe et appartient à l'utilisateur
+        # Vérifie que la conversation appartient bien à l'utilisateur
         conversation = db.query(Conversation).filter(
             Conversation.id == data.conversation_id,
             Conversation.user_id == current_user.id
         ).first()
-        
         if not conversation:
             raise HTTPException(
-                status_code=404, 
+                status_code=404,
                 detail="Conversation non trouvée ou vous n'avez pas accès à cette conversation"
             )
-        
         # 1. Sauvegarde le message de l'utilisateur
         user_msg = Message(
             conversation_id=data.conversation_id,
@@ -1660,40 +1613,29 @@ async def chat_with_assistant(
             is_user=True
         )
         db.add(user_msg)
-        
         # 2. Génère une réponse intelligente via la fonction d'assistance
         bot_reply = generate_assistant_response(data.content, current_user, db)
-        
         # 3. Sauvegarde la réponse de l'assistant
         assistant_msg = Message(
             conversation_id=data.conversation_id,
             content=bot_reply,
-            is_user=False  # Message du système/assistant
+            is_user=False
         )
         db.add(assistant_msg)
-        
-        # Met à jour la date de modification de la conversation
         conversation.updated_at = datetime.now()
-        
-        # Valide toutes les modifications en une seule transaction
         db.commit()
-        # Rafraîchit les objets pour obtenir leurs IDs générés
         db.refresh(user_msg)
         db.refresh(assistant_msg)
-        
-        # Retourne une réponse complète avec métadonnées
         return {
             "success": True,
-            "reply": bot_reply,  # La réponse générée
-            "user_message_id": user_msg.id,  # ID du message utilisateur sauvegardé
-            "assistant_message_id": assistant_msg.id,  # ID du message assistant sauvegardé
-            "conversation_id": data.conversation_id  # ID de la conversation
+            "reply": bot_reply,
+            "user_message_id": user_msg.id,
+            "assistant_message_id": assistant_msg.id,
+            "conversation_id": data.conversation_id
         }
-    
     except HTTPException as he:
         raise he
     except Exception as e:
-        db.rollback()  # Annule la transaction en cas d'erreur
+        db.rollback()
         print(f"❌ Erreur lors de l'interaction avec l'assistant: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
-
