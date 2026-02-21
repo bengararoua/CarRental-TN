@@ -130,7 +130,8 @@ def user_response(user: User):
         "id": user.id,
         "username": user.username,
         "email": user.email,
-        "role": user.role
+        "role": user.role,
+        "created_at": user.created_at.isoformat() if user.created_at else None
     }
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None):
@@ -799,12 +800,14 @@ async def update_profile(
         db.commit()
         db.refresh(current_user)
         print("✅ Profil mis à jour avec succès")
+        new_token = create_access_token(data={"sub": current_user.email, "role": current_user.role})
         return JSONResponse(
             status_code=200,
             content={
                 "success": True,
                 "message": "Profil mis à jour avec succès",
-                "user": user_response(current_user)
+                "user": user_response(current_user),
+                "new_token": new_token
             }
         )
     except Exception as e:

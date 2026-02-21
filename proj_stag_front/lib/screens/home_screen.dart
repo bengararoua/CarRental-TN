@@ -318,10 +318,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       context,
                       MaterialPageRoute(
                         // Passe le nom d'utilisateur et l'email au ProfileScreen
-                        builder: (context) => ProfileScreen(
-                          username: widget.username,
-                          email: widget.userEmail,
-                        ),
+                        builder: (context) => ProfileScreen(),
                       ),
                     );
                   },
@@ -336,7 +333,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       // Texte à l'intérieur de l'avatar (première lettre du nom)
                       child: Text(
                         // Première lettre du nom en majuscule
-                        widget.username[0].toUpperCase(),
+                        (Provider.of<VehiclesProvider>(context).username ?? widget.username)[0].toUpperCase(),
                         // Style du texte (blanc et gras)
                         style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                       ),
@@ -483,10 +480,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => ProfileScreen(
-                          username: widget.username,
-                          email: widget.userEmail,
-                        ),
+                        builder: (context) => ProfileScreen(),
                       ),
                     ).then((_) {
                       // Après retour de la navigation, réinitialise l'index à 0 (Accueil)
@@ -680,7 +674,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 // Message de bienvenue personnalisé avec le nom de l'utilisateur
                 Text(
                   // Utilise le nom d'utilisateur et un drapeau tunisien
-                  'Marhba, ${widget.username}! 🇹🇳',
+                  'Marhba, ${Provider.of<VehiclesProvider>(context).username ?? widget.username}! 🇹🇳',
                   // Style du texte (blanc clair, taille 16)
                   style: TextStyle(color: Colors.white70, fontSize: 16),
                 ),

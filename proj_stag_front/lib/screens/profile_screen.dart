@@ -18,14 +18,10 @@ import 'home_screen.dart';
 // Définition d'un widget avec état (StatefulWidget) pour l'écran de profil
 // Ce widget accepte deux paramètres obligatoires : username et email
 class ProfileScreen extends StatefulWidget {
-  // Déclaration des variables finales pour stocker les données utilisateur
-  final String username;
-  final String email;
+  // Plus besoin de passer username/email en paramètre :
+  // ProfileScreen lit directement depuis le Provider pour toujours avoir les données à jour
+  ProfileScreen();
 
-  // Constructeur avec paramètres nommés requis
-  ProfileScreen({required this.username, required this.email});
-
-  // Méthode obligatoire qui crée l'état associé à ce widget
   @override
   _ProfileScreenState createState() => _ProfileScreenState();
 }
@@ -47,7 +43,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int _totalFavorites = 0;    // Nombre de véhicules favoris
   
   // Variable pour stocker la date d'inscription formatée
-  String _memberSince = 'Janvier 2025';
+  String _memberSince = '';
   
   // Contrôleurs pour gérer le défilement et le focus (hérités de HomeScreen)
   final ScrollController _scrollController = ScrollController();
@@ -56,15 +52,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // Méthode appelée une fois lors de la création de l'état
   @override
   void initState() {
-    // Appel de la méthode initState de la classe parent
     super.initState();
-    // Initialisation des contrôleurs avec les valeurs du widget parent
-    _usernameController.text = widget.username;
-    _emailController.text = widget.email;
-    // Chargement des statistiques utilisateur
-    _loadUserStats();
-    // Chargement de la date de création du compte
-    _loadUserCreatedDate();
+    // Date par défaut dynamique (mois/année actuel), sera écrasée par la vraie date du serveur
+    _memberSince = _formatDateToMonthYear(DateTime.now());
+    // addPostFrameCallback : attend le 1er frame pour accéder au Provider en toute sécurité
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final provider = Provider.of<VehiclesProvider>(context, listen: false);
+      // Lecture toujours fraîche depuis le Provider (jamais depuis des paramètres figés)
+      _usernameController.text = provider.username ?? '';
+      _emailController.text = provider.userEmail ?? '';
+      _loadUserCreatedDate();
+      _loadUserStats();
+    });
   }
   
   // Méthode appelée lors de la destruction de l'état pour libérer les ressources
@@ -294,8 +293,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       // Si la mise à jour a réussi
       if (result['success'] == true && result['user'] != null) {
-        // Mise à jour des données utilisateur dans le provider
-        Provider.of<VehiclesProvider>(context, listen: false).setUser(result['user'], token);
+        // Récupération du nouveau token (crucial si l'email a changé)
+        final String updatedToken = result['new_token'] ?? token;
+        // Mise à jour des données ET du token dans le provider
+        Provider.of<VehiclesProvider>(context, listen: false).setUser(result['user'], updatedToken);
         
         // Mise à jour de la date de création si présente dans la réponse
         if (result['user'].containsKey('created_at') && result['user']['created_at'] != null) {
