@@ -58,7 +58,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     // addPostFrameCallback : attend le 1er frame pour accéder au Provider en toute sécurité
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = Provider.of<VehiclesProvider>(context, listen: false);
-      // Lecture toujours fraîche depuis le Provider (jamais depuis des paramètres figés)
+      // Lecture toujours fraîche depuis le Provider
       _usernameController.text = provider.username ?? '';
       _emailController.text = provider.userEmail ?? '';
       _loadUserCreatedDate();
@@ -104,7 +104,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       // Si la valeur est une chaîne de caractères
       if (dateValue is String) {
         try {
-          // Tentative de parsing au format ISO 8601
+          // Tentative de parsing au format 
           finalDate = DateTime.parse(dateValue);
         } catch (e) {
           try {

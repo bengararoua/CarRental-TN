@@ -7,13 +7,13 @@ import 'package:http/http.dart' as http;
 // Importation du package 'image_picker' pour utiliser le type XFile (représentation d'un fichier image)
 import 'package:image_picker/image_picker.dart'; // Ajout pour XFile
 
-// Importation de 'http_parser' pour manipuler les types MIME (nécessaire pour l'upload)
+// Importation de 'http_parser' pour manipuler les types  (nécessaire pour l'upload)
 import 'package:http_parser/http_parser.dart'; // Pour MediaType
 
 // Définition de la classe AuthService qui contient toutes les méthodes d'appel à l'API backend
 class AuthService {
-  // URL de base de l'API (à adapter selon l'environnement de déploiement)
-  static const String baseUrl = 'http://localhost:8000'; // À adapter selon l'environnement
+  // URL de base de l'API 
+  static const String baseUrl = 'http://localhost:8000'; 
 
   // ========== MÉTHODES D'AUTHENTIFICATION ==========
 

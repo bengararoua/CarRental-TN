@@ -50,7 +50,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
     });
   }
 
-  // Initialiser la conversation (async car nécessite des appels réseau)
+  // Initialiser la conversation 
   Future<void> _initializeChat() async {
     try {
       // Récupérer le token d'authentification depuis le provider

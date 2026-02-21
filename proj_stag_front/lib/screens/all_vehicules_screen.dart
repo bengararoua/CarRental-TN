@@ -67,7 +67,7 @@ class _AllVehiclesScreenState extends State<AllVehiclesScreen> {
     setState(() {
       // Filtre les véhicules selon les critères
       _filteredVehicles = provider.allVehicles.where((v) {
-        // Vérifie si le nom du véhicule contient le texte de recherche (insensible à la casse)
+        // Vérifie si le nom du véhicule contient le texte de recherche 
         final matchesSearch = v['name'].toLowerCase().contains(_searchController.text.toLowerCase());
         
         // Vérifie si la catégorie correspond ou si "Tous" est sélectionné

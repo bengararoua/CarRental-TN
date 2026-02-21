@@ -79,13 +79,13 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         // Récupère la liste des véhicules marqués comme favoris depuis le provider
         final favoriteVehicles = provider.favorites;
 
-        // Retourne la structure de base de l'écran (Scaffold)
+        // Retourne la structure de base de l'écran 
         return Scaffold(
-          // Définit la couleur de fond de l'écran en noir (#1A1A1A)
+          // Définit la couleur de fond de l'écran en noir 
           backgroundColor: const Color(0xFF1A1A1A),
           // Barre d'application en haut de l'écran
           appBar: AppBar(
-            // Couleur de fond de la barre d'application (identique au fond)
+            // Couleur de fond de la barre d'application =
             backgroundColor: const Color(0xFF1A1A1A),
             // Supprime l'ombre sous la barre pour un look plat
             elevation: 0,

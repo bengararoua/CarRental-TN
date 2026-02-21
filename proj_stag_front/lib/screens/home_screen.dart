@@ -84,7 +84,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ? '${vehicle['name']} ajouté des favoris❤️' // Si déjà favori (retrait)
               : '${vehicle['name']} retiré aux favoris ' // Si pas favori (ajout)
         ),
-        // Couleur de fond différente selon l'action (rouge pour retrait, gris pour ajout)
+        // Couleur de fond différente selon l'action
         backgroundColor: vehicle['isFavorite'] ? Colors.red : Colors.grey,
         // Durée d'affichage du message (1 seconde)
         duration: Duration(seconds: 1),
@@ -304,7 +304,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 },
               ),
               
-              // Avatar de l'utilisateur (visible pour TOUS) - Maintenant avec curseur pointer
+              // Avatar de l'utilisateur (visible pour TOUS) 
               // Widget MouseRegion pour modifier le curseur au survol
               MouseRegion(
                 // Définit le curseur en forme de main (cliquable)

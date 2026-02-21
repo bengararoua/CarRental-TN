@@ -1,10 +1,3 @@
-// ======================================================
-// add_vehicle_screen.dart
-// Écran d'ajout d'un véhicule (admin uniquement)
-// Version compatible Web et Mobile
-// Chaque ligne est commentée pour une compréhension optimale
-// ======================================================
-
 // Importation pour manipuler les bytes (Uint8List) nécessaire à la prévisualisation web
 import 'dart:typed_data';
 // Importation pour l'encodage JSON (utilisé indirectement via le service)

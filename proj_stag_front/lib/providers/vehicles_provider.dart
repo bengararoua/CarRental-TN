@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 // Importer le service d'authentification pour gérer les appels API liés à l'authentification
 import '../services/auth_service.dart';
-// Importer le package HTTP pour effectuer des requêtes réseau (ajouté pour vérifier la disponibilité)
+// Importer le package HTTP pour effectuer des requêtes réseau
 import 'package:http/http.dart' as http;
 
 // Définir une classe qui gère l'état des véhicules et notifie les widgets lorsqu'il y a des changements

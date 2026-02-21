@@ -135,7 +135,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       backgroundColor: const Color(0xFF1A1A1A),
       // Configuration de la barre d'application en haut de l'écran
       appBar: AppBar(
-        // Couleur de fond de la barre d'application (identique à l'écran)
+        // Couleur de fond de la barre d'application 
         backgroundColor: const Color(0xFF1A1A1A),
         // Suppression de l'ombre sous la barre pour un look plat
         elevation: 0,

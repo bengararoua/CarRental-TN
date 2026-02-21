@@ -69,7 +69,7 @@ class _LoginScreenState extends State<LoginScreen> {
         print('🎟️ Token: ${token.substring(0, 20)}...');
         print('📅 Date création: ${user['created_at']}');
 
-        // Utilise le Provider pour enregistrer toutes les données utilisateur (y compris created_at)
+        // Utilise le Provider pour enregistrer toutes les données utilisateur 
         Provider.of<VehiclesProvider>(context, listen: false).setUser(
           user,
           token,

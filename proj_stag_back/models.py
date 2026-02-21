@@ -68,7 +68,7 @@ class User(Base):
     email = Column(String(100), unique=True, index=True, nullable=False)
     
     # Colonne pour stocker le mot de passe haché (sécurité)
-    # String(255): type chaîne avec limite de 255 caractères (suffisant pour les hashs)
+    # String(255): type chaîne avec limite de 255 caractères 
     # nullable=False: le mot de passe est obligatoire
     hashed_password = Column(String(255), nullable=False)
     
@@ -88,7 +88,7 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.now)
     
     # Relations : définir la relation avec la table "favorites" (un utilisateur peut avoir plusieurs favoris)
-    # relationship: crée une relation e
+    # relationship: crée une relation 
     # "Favorite": nom de la classe cible de la relation
     # back_populates="user": crée une relation bidirectionnelle (la classe Favorite aura un attribut "user")
     favorites = relationship("Favorite", back_populates="user")

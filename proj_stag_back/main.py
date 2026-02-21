@@ -48,7 +48,7 @@ import uuid
 # ========================================
 # CONFIGURATION JWT
 # ========================================
-# Clé secrète utilisée pour signer les tokens JWT (à garder secrète en production)
+# Clé secrète utilisée pour signer les tokens JWT
 SECRET_KEY = "a1d03237d6435d1d39ab8047118d622c314024ca04b478877a13e8ae238674d1"
 
 # Algorithme de chiffrement pour JWT
@@ -253,7 +253,7 @@ class ConversationResponse(BaseModel):
 
 class ConversationListResponse(BaseModel):
     """
-    Schéma de réponse pour la liste des conversations (résumé).
+    Schéma de réponse pour la liste des conversations .
     """
     id: int
     title: str
@@ -357,7 +357,7 @@ def read_users_me(current_user: User = Depends(get_current_user)):
 @app.post("/forgot-password/reset")
 def reset_password(data: ResetPassword, db: Session = Depends(get_db)):
     """
-    Endpoint pour réinitialiser le mot de passe (sans vérification d'ancien mot de passe).
+    Endpoint pour réinitialiser le mot de passe .
     """
     user = db.query(User).filter(User.email == data.email).first()
     if not user:
@@ -827,10 +827,10 @@ async def upload_image(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Endpoint pour uploader une image (par exemple pour l'avatar).
+    Endpoint pour uploader une image.
     """
     try:
-        # Vérification du type MIME
+        # Vérification du type 
         allowed_types = ["image/jpeg", "image/png", "image/jpg", "image/webp"]
         if file.content_type not in allowed_types:
             raise HTTPException(
@@ -910,7 +910,7 @@ def delete_vehicle(
     db: Session = Depends(get_db)
 ):
     """
-    Supprime un véhicule (admin seulement) après vérification qu'il n'a pas de réservations actives.
+    Supprime un véhicule (admin seulement) .
     """
     try:
         vehicle = db.query(vehicles).filter(vehicles.id == vehicle_id).first()
@@ -1291,7 +1291,7 @@ def export_conversation(
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 # ========================================
-# FONCTION DE GÉNÉRATION DE RÉPONSE POUR L'ASSISTANT (AMÉLIORÉE)
+# FONCTION DE GÉNÉRATION DE RÉPONSE POUR L'ASSISTANT 
 # ========================================
 def generate_assistant_response(user_message: str, current_user: User, db: Session) -> str:
     """
@@ -1526,7 +1526,6 @@ Vos données sont cryptées et protégées selon les normes RGPD.
 💡 **Besoin d'aide ?** Contactez le support si vous rencontrez des difficultés."""
     
     # --- 8. RÉPONSE GÉNÉRIQUE SUR LES VÉHICULES (si "véhicule(s)" ou "voiture(s)" sans être pris par les cas spécifiques) ---
-    # Cette condition vient après les cas spécifiques "types de véhicules" et "véhicules disponibles"
     elif any(word in user_message_lower for word in ['véhicule', 'véhicules', 'voiture', 'voitures']):
         return """🚗 **Notre gamme de véhicules :**
 

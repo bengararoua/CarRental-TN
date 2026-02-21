@@ -39,7 +39,7 @@ class _BookingScreenState extends State<BookingScreen> {
   final _addressController = TextEditingController(); // Pour l'adresse postale
   final _notesController = TextEditingController();   // Pour les notes optionnelles
 
-  // Contrôleurs supplémentaires pour les champs de date (amélioration UX, pré-remplissage)
+  // Contrôleurs supplémentaires pour les champs de date 
   final _pickupDateController = TextEditingController(); // Pour la date de début
   final _returnDateController = TextEditingController(); // Pour la date de fin
 
@@ -92,7 +92,7 @@ class _BookingScreenState extends State<BookingScreen> {
     }
   }
 
-  // Méthode de nettoyage appelée quand le widget est retiré de l'arbre des widgets (évite les fuites mémoire)
+  // Méthode de nettoyage appelée quand le widget est retiré de l'arbre des widgets 
   @override
   void dispose() {
     // Libère toutes les ressources des contrôleurs de texte
@@ -110,8 +110,7 @@ class _BookingScreenState extends State<BookingScreen> {
     super.dispose(); // Appelle la méthode dispose de la classe parent
   }
 
-  // FIX 1 : _scrollUp avec clamp pour éviter une position négative
-  // (important surtout avec BouncingScrollPhysics qui peut causer un rebond indésirable)
+  //  scrollUp avec clamp pour éviter une position négative
   void _scrollUp() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -125,7 +124,7 @@ class _BookingScreenState extends State<BookingScreen> {
     }
   }
 
-  // FIX 1 : _scrollDown avec clamp pour ne pas dépasser la fin du contenu
+  // _scrollDown avec clamp pour ne pas dépasser la fin du contenu
   void _scrollDown() {
     if (_scrollController.hasClients) {
       _scrollController.animateTo(
@@ -391,7 +390,7 @@ class _BookingScreenState extends State<BookingScreen> {
         ),
       ),
       body: SafeArea(
-        // FIX 2 : Utilisation de KeyboardListener (non déprécié) à la place de RawKeyboardListener.
+        //  Utilisation de KeyboardListener
         // On enveloppe avec un GestureDetector pour récupérer le focus scroll
         // uniquement quand l'utilisateur tape en dehors des TextFields,
         // évitant ainsi le conflit avec les touches fléchées dans les champs de saisie.
@@ -408,7 +407,7 @@ class _BookingScreenState extends State<BookingScreen> {
             // autofocus: false pour ne pas voler le focus des TextFields au démarrage
             autofocus: false,
             onKeyEvent: (KeyEvent event) {
-              // FIX 2 : On n'intercepte les flèches QUE si aucun TextField n'a le focus,
+              // On n'intercepte les flèches QUE si aucun TextField n'a le focus,
               // c'est-à-dire uniquement quand _scrollFocusNode est le focus primaire.
               if (event is KeyDownEvent) {
                 if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
@@ -710,7 +709,7 @@ class _BookingScreenState extends State<BookingScreen> {
       keyboardType: keyboardType,
       maxLines: maxLines,
       style: const TextStyle(color: Colors.white),
-      // FIX 2 : quand un TextField perd le focus, on le redonne au nœud de scroll
+      //quand un TextField perd le focus, on le redonne au nœud de scroll
       // pour que les flèches reprennent le contrôle du scroll immédiatement après la saisie.
       onEditingComplete: () {
         FocusScope.of(context).unfocus();
