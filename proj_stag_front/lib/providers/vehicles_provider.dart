@@ -24,7 +24,7 @@ class VehiclesProvider with ChangeNotifier {
   // Variable privée pour stocker toutes les données de l'utilisateur connecté
   Map<String, dynamic>? _user;
 
-  // Getter public permettant d'accéder à la liste des véhicules (lecture seule)
+  // Getter public permettant d'accéder à la liste des véhicules
   List<Map<String, dynamic>> get allVehicles => _allVehicles;
   // Getter public pour savoir si un chargement est en cours
   bool get isLoading => _isLoading;
@@ -43,35 +43,6 @@ class VehiclesProvider with ChangeNotifier {
   // Getter qui filtre et retourne uniquement les véhicules marqués comme favoris
   List<Map<String, dynamic>> get favorites =>
       _allVehicles.where((v) => v['isFavorite'] == true).toList();
-
-  // Méthode qui vérifie si un véhicule spécifique (identifié par son ID) est dans les favoris
-  bool isFavorite(int vehicleId) {
-    // Utiliser un bloc try-catch pour éviter les erreurs si le véhicule n'est pas trouvé
-    try {
-      // Rechercher le véhicule dans la liste par son ID, retourner un Map vide si non trouvé
-      final vehicle = _allVehicles.firstWhere(
-        (v) => v['id'] == vehicleId,
-        orElse: () => {},
-      );
-      // Vérifier si la clé 'isFavorite' existe et est true, sinon retourner false
-      return vehicle['isFavorite'] == true;
-    } catch (e) {
-      // En cas d'erreur (ex: liste vide), retourner false
-      return false;
-    }
-  }
-
-  // Méthode pour définir le token et optionnellement le rôle de l'utilisateur
-  void setToken(String token, {String? role}) {
-    // Stocker le token JWT
-    _token = token;
-    // Stocker le rôle si fourni en paramètre
-    _userRole = role;
-    // Afficher un message de debug pour le développement
-    print('🔑 Token défini avec rôle: $role');
-    // Notifier tous les widgets écoutant ce provider qu'un changement a eu lieu
-    notifyListeners();
-  }
 
   // Méthode pour stocker les données utilisateur et le token après une connexion réussie
   void setUser(Map<String, dynamic> userData, String token) {
@@ -123,7 +94,7 @@ class VehiclesProvider with ChangeNotifier {
      
 
       // Appeler le service d'authentification pour récupérer la liste des véhicules
-      // Passage du token pour authentification (peut être null)
+      // Passage du token pour authentification
       List<dynamic> vehiclesData = await AuthService.getVehicles(token: _token);
 
       // Transformer les données JSON brutes en une liste de Maps avec une structure claire
@@ -180,7 +151,7 @@ class VehiclesProvider with ChangeNotifier {
     final bool isCurrentlyFav = _allVehicles[index]['isFavorite'];
 
     try {
-      // Mise à jour immédiate de l'interface utilisateur : inverser l'état local
+      // Mise à jour immédiate de l'interface utilisateur
       _allVehicles[index]['isFavorite'] = !isCurrentlyFav;
       // Notifier les widgets du changement (feedback visuel instantané)
       notifyListeners();

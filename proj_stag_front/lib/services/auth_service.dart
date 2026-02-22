@@ -49,7 +49,7 @@ class AuthService {
       final response = await http.post(
         Uri.parse('$baseUrl/login'),
         headers: {'Content-Type': 'application/x-www-form-urlencoded'}, // Type de contenu spécifique
-        body: {'username': email, 'password': password}, // Corps sous forme de Map (sera encodé automatiquement)
+        body: {'username': email, 'password': password}, // Corps sous forme de Map
       );
       // Retourne le résultat avec vérification du code 200 (OK)
       return {
@@ -81,7 +81,7 @@ class AuthService {
 
   // ========== MÉTHODES POUR LES VÉHICULES ==========
 
-  // Méthode statique pour récupérer la liste des véhicules (accessible sans token ?)
+  // Méthode statique pour récupérer la liste des véhicules
   static Future<List<dynamic>> getVehicles({String? token}) async {
     try {
       // Préparation des en-têtes HTTP
@@ -371,24 +371,7 @@ class AuthService {
 
   // ========== MÉTHODES POUR LE CHAT ==========
 
-  // Méthode statique pour envoyer un message dans une conversation (assistant)
-  static Future<Map<String, dynamic>> sendChatMessage(int convId, String text, String token) async {
-    // Requête POST à '/assistant/chat'
-    final response = await http.post(
-      Uri.parse('$baseUrl/assistant/chat'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-      body: jsonEncode({
-        'conversation_id': convId,
-        'content': text,
-      }),
-    );
-    return jsonDecode(response.body); // Retourne la réponse décodée
-  }
-
-  // Méthode statique pour enregistrer un message et obtenir la réponse de l'assistant (identique à sendChatMessage mais avec gestion d'erreur)
+  // Méthode statique pour enregistrer un message et obtenir la réponse de l'assistant
   static Future<Map<String, dynamic>> saveAndGetAssistantReply({
     required int conversationId,
     required String content,
@@ -415,50 +398,6 @@ class AuthService {
     } catch (e) {
       print("❌ Erreur saveAndGetAssistantReply: $e");
       rethrow; // Relance l'exception pour la gestion par l'appelant
-    }
-  }
-
-  // Méthode statique pour créer une nouvelle conversation
-  static Future<Map<String, dynamic>> createConversation(String token, String title) async {
-    try {
-      // Requête POST à '/conversations/'
-      final response = await http.post(
-        Uri.parse('$baseUrl/conversations/'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode({'title': title}),
-      );
-      if (response.statusCode == 201) { // Création réussie
-        return {'success': true, 'data': jsonDecode(response.body)};
-      } else {
-        return {'success': false, 'message': 'Erreur lors de la création de la conversation'};
-      }
-    } catch (e) {
-      return {'success': false, 'message': 'Erreur de connexion: $e'};
-    }
-  }
-
-  // Méthode statique pour récupérer toutes les conversations de l'utilisateur
-  static Future<List<dynamic>> getUserConversations(String token) async {
-    try {
-      // Requête GET à '/conversations/'
-      final response = await http.get(
-        Uri.parse('$baseUrl/conversations/'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return (data is List) ? data : [];
-      }
-      return [];
-    } catch (e) {
-      print('Erreur récupération conversations: $e');
-      return [];
     }
   }
 
