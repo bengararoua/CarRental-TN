@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 import bcrypt
 
 # Importation des modèles SQLAlchemy définis dans le fichier models.py
-from models import User, vehicles, Favorite, Booking, Conversation, Message, Base, engine, SessionLocal
+from models import User, Admin, vehicles, Favorite, Booking, Conversation, Message, Base, engine, SessionLocal
 
 # Types optionnels et listes pour les annotations de type
 from typing import Optional, List
@@ -157,13 +157,6 @@ class UserRegister(BaseModel):
     email: EmailStr  # Valide que l'email a un format correct
     password: str
 
-class UserLogin(BaseModel):
-    """
-    Schéma de validation pour la connexion.
-    """
-    email: EmailStr
-    password: str
-
 class ResetPassword(BaseModel):
     """
     Schéma pour la réinitialisation du mot de passe.
@@ -186,22 +179,6 @@ class BookingCreate(BaseModel):
     pickup_date: str  # Date sous forme de chaîne, sera convertie en date
     return_date: str
     total_price: float
-
-class BookingResponse(BaseModel):
-    """
-    Schéma de réponse pour une réservation (utilisé par Pydantic pour la sérialisation).
-    """
-    id: int
-    car_id: int
-    user_id: int
-    full_name: str
-    pickup_date: date
-    return_date: date
-    total_price: float
-    status: str
-    created_at: Optional[datetime]
-    class Config:
-        from_attributes = True  # Permet de créer le modèle à partir d'un objet SQLAlchemy
 
 class UpdateProfileRequest(BaseModel):
     """
@@ -318,6 +295,29 @@ def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depend
         raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
     # Crée un token JWT avec l'email et le rôle
     access_token = create_access_token(data={"sub": db_user.email, "role": db_user.role})
+
+    # -------------------------------------------------------
+    # SYNCHRONISATION AVEC LA TABLE "admins"
+    # -------------------------------------------------------
+    # Si l'utilisateur est admin, on s'assure qu'il est bien présent
+    # dans la table "admins" avec tous ses attributs à jour.
+    if db_user.role == "admin":
+        existing_admin = db.query(Admin).filter(Admin.user_id == db_user.id).first()
+        if not existing_admin:
+            # L'admin n'est pas encore dans la table admins → on l'ajoute avec tous ses attributs
+            new_admin = Admin(
+                user_id=db_user.id,
+                username=db_user.username,
+                email=db_user.email,
+                hashed_password=db_user.hashed_password,
+                role=db_user.role,
+                is_active=db_user.is_active,
+                created_at=db_user.created_at
+            )
+            db.add(new_admin)
+            db.commit()
+            print(f"✅ Admin '{db_user.username}' ajouté dans la table admins")
+
     return {
         "access_token": access_token,
         "token_type": "bearer",
@@ -347,13 +347,6 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         raise credentials_exception
     return user
 
-@app.get("/me")
-def read_users_me(current_user: User = Depends(get_current_user)):
-    """
-    Endpoint pour obtenir les informations de l'utilisateur connecté.
-    """
-    return user_response(current_user)
-
 @app.post("/forgot-password/reset")
 def reset_password(data: ResetPassword, db: Session = Depends(get_db)):
     """
@@ -362,8 +355,20 @@ def reset_password(data: ResetPassword, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == data.email).first()
     if not user:
         raise HTTPException(status_code=404, detail="Aucun compte associé à cet email")
-    # Met à jour le mot de passe avec le nouveau hashé
-    user.hashed_password = hash_password(data.new_password)
+
+    # Hache le nouveau mot de passe
+    new_hashed = hash_password(data.new_password)
+
+    # 1. Met à jour le mot de passe dans la table 'users'
+    user.hashed_password = new_hashed
+
+    # 2. Si c'est un admin, synchronise aussi la table 'admins'
+    if user.role == "admin":
+        admin_entry = db.query(Admin).filter(Admin.user_id == user.id).first()
+        if admin_entry:
+            admin_entry.hashed_password = new_hashed
+            print(f"✅ Mot de passe synchronisé dans admins pour '{user.username}'")
+
     db.commit()
     return {"message": "Mot de passe réinitialisé avec succès"}
 
@@ -486,17 +491,6 @@ def remove_favorite(car_id: int, current_user: User = Depends(get_current_user),
     db.commit()
     return {"message": "Retiré des favoris avec succès"}
 
-@app.get("/favorites/check/{car_id}")
-def check_favorite(car_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    """
-    Vérifie si un véhicule est dans les favoris de l'utilisateur.
-    """
-    favorite = db.query(Favorite).filter(
-        Favorite.user_id == current_user.id,
-        Favorite.car_id == car_id
-    ).first()
-    return {"isFavorite": favorite is not None}
-
 # ========================================
 # ENDPOINTS POUR LES RÉSERVATIONS
 # ========================================
@@ -592,13 +586,6 @@ def get_user_bookings(
         print(f"Erreur lors de la récupération des réservations: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
-@app.get("/health")
-def health_check():
-    """
-    Endpoint simple pour vérifier que l'API est en ligne.
-    """
-    return {"status": "OK", "message": "API is running"}
-
 # ========================================
 # FONCTIONS ADMINISTRATEUR
 # ========================================
@@ -613,6 +600,9 @@ def get_current_admin(current_user: User = Depends(get_current_user)):
         )
     return current_user
 
+# -------------------------------------------------------
+# ENDPOINT : LISTE DE tous les réservations (admin seulement)
+# -------------------------------------------------------
 @app.get("/admin/bookings")
 def get_all_bookings(
     current_admin: User = Depends(get_current_admin),
@@ -800,6 +790,23 @@ async def update_profile(
         db.commit()
         db.refresh(current_user)
         print("✅ Profil mis à jour avec succès")
+
+        # -------------------------------------------------------
+        # SYNCHRONISATION AVEC LA TABLE "admins"
+        # -------------------------------------------------------
+        # Si l'utilisateur est admin, on met à jour aussi ses données
+        # dans la table "admins" pour garder les deux tables cohérentes.
+        if current_user.role == "admin":
+            admin_entry = db.query(Admin).filter(Admin.user_id == current_user.id).first()
+            if admin_entry:
+                # Met à jour chaque champ modifié dans admins
+                admin_entry.username = current_user.username
+                admin_entry.email = current_user.email
+                admin_entry.hashed_password = current_user.hashed_password
+                admin_entry.is_active = current_user.is_active
+                db.commit()
+                print(f"✅ Table admins synchronisée pour '{current_user.username}'")
+
         new_token = create_access_token(data={"sub": current_user.email, "role": current_user.role})
         return JSONResponse(
             status_code=200,
@@ -1081,32 +1088,6 @@ def get_user_conversations(
         print(f"❌ Erreur lors de la récupération des conversations: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
-@app.get("/conversations/{conversation_id}", response_model=ConversationResponse)
-def get_conversation(
-    conversation_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Récupère une conversation spécifique avec ses messages.
-    """
-    try:
-        conversation = db.query(Conversation).filter(
-            Conversation.id == conversation_id,
-            Conversation.user_id == current_user.id
-        ).first()
-        if not conversation:
-            raise HTTPException(
-                status_code=404,
-                detail="Conversation non trouvée ou vous n'avez pas accès à cette conversation"
-            )
-        return conversation
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        print(f"❌ Erreur lors de la récupération de la conversation: {e}")
-        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
-
 @app.post("/conversations/{conversation_id}/messages", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
 def add_message(
     conversation_id: int,
@@ -1142,152 +1123,6 @@ def add_message(
     except Exception as e:
         db.rollback()
         print(f"❌ Erreur lors de l'ajout du message: {e}")
-        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
-
-@app.put("/conversations/{conversation_id}", response_model=ConversationResponse)
-def update_conversation(
-    conversation_id: int,
-    title: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Met à jour le titre d'une conversation.
-    """
-    try:
-        conversation = db.query(Conversation).filter(
-            Conversation.id == conversation_id,
-            Conversation.user_id == current_user.id
-        ).first()
-        if not conversation:
-            raise HTTPException(
-                status_code=404,
-                detail="Conversation non trouvée ou vous n'avez pas accès à cette conversation"
-            )
-        conversation.title = title
-        conversation.updated_at = datetime.now()
-        db.commit()
-        db.refresh(conversation)
-        return conversation
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        db.rollback()
-        print(f"❌ Erreur lors de la mise à jour de la conversation: {e}")
-        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
-
-@app.delete("/conversations/{conversation_id}")
-def delete_conversation(
-    conversation_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Supprime (désactive) une conversation.
-    """
-    try:
-        conversation = db.query(Conversation).filter(
-            Conversation.id == conversation_id,
-            Conversation.user_id == current_user.id
-        ).first()
-        if not conversation:
-            raise HTTPException(
-                status_code=404,
-                detail="Conversation non trouvée ou vous n'avez pas accès à cette conversation"
-            )
-        conversation.is_active = False
-        db.commit()
-        return {
-            "success": True,
-            "message": "Conversation supprimée avec succès"
-        }
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        db.rollback()
-        print(f"❌ Erreur lors de la suppression de la conversation: {e}")
-        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
-
-@app.delete("/conversations/{conversation_id}/messages/{message_id}")
-def delete_message(
-    conversation_id: int,
-    message_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Supprime un message spécifique d'une conversation.
-    """
-    try:
-        conversation = db.query(Conversation).filter(
-            Conversation.id == conversation_id,
-            Conversation.user_id == current_user.id
-        ).first()
-        if not conversation:
-            raise HTTPException(
-                status_code=404,
-                detail="Conversation non trouvée ou vous n'avez pas accès à cette conversation"
-            )
-        message = db.query(Message).filter(
-            Message.id == message_id,
-            Message.conversation_id == conversation_id
-        ).first()
-        if not message:
-            raise HTTPException(
-                status_code=404,
-                detail="Message non trouvé dans cette conversation"
-            )
-        db.delete(message)
-        conversation.updated_at = datetime.now()
-        db.commit()
-        return {
-            "success": True,
-            "message": "Message supprimé avec succès"
-        }
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        db.rollback()
-        print(f"❌ Erreur lors de la suppression du message: {e}")
-        raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
-
-@app.get("/conversations/{conversation_id}/export")
-def export_conversation(
-    conversation_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Exporte une conversation au format JSON.
-    """
-    try:
-        conversation = db.query(Conversation).filter(
-            Conversation.id == conversation_id,
-            Conversation.user_id == current_user.id
-        ).first()
-        if not conversation:
-            raise HTTPException(
-                status_code=404,
-                detail="Conversation non trouvée ou vous n'avez pas accès à cette conversation"
-            )
-        export_data = {
-            "conversation_id": conversation.id,
-            "title": conversation.title,
-            "created_at": conversation.created_at.isoformat(),
-            "messages": [
-                {
-                    "sender": "user" if msg.is_user else "assistant",
-                    "content": msg.content,
-                    "timestamp": msg.created_at.isoformat()
-                }
-                for msg in conversation.messages
-            ]
-        }
-        return export_data
-    except HTTPException as he:
-        raise he
-    except Exception as e:
-        print(f"❌ Erreur lors de l'export de la conversation: {e}")
         raise HTTPException(status_code=500, detail=f"Erreur serveur: {str(e)}")
 
 # ========================================

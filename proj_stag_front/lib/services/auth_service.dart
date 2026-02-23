@@ -551,4 +551,48 @@ class AuthService {
       return {'success': false, 'message': 'Erreur de connexion: $e'};
     }
   }
+
+  // ========== MÉTHODES POUR LES CONVERSATIONS ==========
+
+  // Récupère toutes les conversations de l'utilisateur connecté
+  static Future<List<dynamic>> getConversations(String token) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/conversations/'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return (data is List) ? data : [];
+      }
+      return [];
+    } catch (e) {
+      print('Erreur récupération conversations: $e');
+      return [];
+    }
+  }
+
+  // Crée une nouvelle conversation
+  static Future<Map<String, dynamic>> createConversation(String title, String token) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/conversations/'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'title': title}),
+      );
+      if (response.statusCode == 201) {
+        return {'success': true, 'data': jsonDecode(response.body)};
+      }
+      return {'success': false, 'message': 'Erreur création conversation'};
+    } catch (e) {
+      print('Erreur création conversation: $e');
+      return {'success': false, 'message': 'Erreur de connexion: $e'};
+    }
+  }
 }

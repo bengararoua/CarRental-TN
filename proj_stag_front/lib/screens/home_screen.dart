@@ -2,8 +2,6 @@
 import 'package:flutter/material.dart';
 // Import du package services pour accéder aux fonctionnalités système (clavier, etc.)
 import 'package:flutter/services.dart';
-// Import du service d'authentification pour les appels API
-import '../services/auth_service.dart';
 // Import de l'écran affichant toutes les voitures
 import 'all_vehicules_screen.dart';
 // Import de l'écran de réservation

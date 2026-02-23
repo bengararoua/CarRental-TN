@@ -621,7 +621,7 @@ class _EditVehicleScreenState extends State<EditVehicleScreen> {
   bool _isLoading = false; // Indicateur de chargement pendant la mise à jour
 
   // Listes d'options pour les menus déroulants
-  final List<String> _categories = ['Économique', 'Citadine', 'Familiale', 'Compacte', 'SUV', 'Berline'];
+  final List<String> _categories = ['Économique', 'Citadine', 'Familiale', 'Compacte', 'SUV'];
   final List<String> _transmissions = ['Automatique', 'Manuelle', 'Hybride'];
   final List<String> _fuels = ['Essence', 'Diesel', 'Électrique', 'Hybride'];
 

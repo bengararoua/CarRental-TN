@@ -1,7 +1,5 @@
 // Importation pour manipuler les bytes (Uint8List) nécessaire à la prévisualisation web
 import 'dart:typed_data';
-// Importation pour l'encodage JSON (utilisé indirectement via le service)
-import 'dart:convert';
 // Importation des widgets Flutter de base
 import 'package:flutter/material.dart';
 // Importation pour les services système (clavier, raccourcis)

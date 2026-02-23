@@ -4,13 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 // Import du package Provider pour la gestion d'état
 import 'package:provider/provider.dart';
-// Import du package http pour les requêtes réseau
-import 'package:http/http.dart' as http;
-// Import pour le traitement JSON
-import 'dart:convert';
+
 // Import du provider des véhicules pour accéder aux données utilisateur
 import '../providers/vehicles_provider.dart';
-// Import du service d'authentification pour l'API de chat
+// Import du service d'authentification pour tous les appels API
 import '../services/auth_service.dart';
 
 // Définition de l'écran assistant (StatefulWidget pour gérer l'état)
@@ -51,6 +48,7 @@ class _AssistantScreenState extends State<AssistantScreen> {
   }
 
   // Initialiser la conversation 
+  // Initialiser la conversation via AuthService (centralisé)
   Future<void> _initializeChat() async {
     try {
       // Récupérer le token d'authentification depuis le provider
@@ -58,66 +56,36 @@ class _AssistantScreenState extends State<AssistantScreen> {
       
       // Vérifier si l'utilisateur est connecté
       if (token == null) {
-        // Afficher un message d'erreur si pas de token
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('Veuillez vous connecter pour utiliser l\'assistant'),
             backgroundColor: Colors.red,
           ),
         );
-        return; // Arrêter l'exécution si pas connecté
+        return;
       }
 
-      // 1. Récupérer les conversations existantes depuis l'API
-      final conversationsResponse = await http.get(
-        // URL de l'API pour récupérer les conversations
-        Uri.parse('${AuthService.baseUrl}/conversations/'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token', // Token dans le header
-        },
-      );
-
-      // Vérifier si la requête a réussi (code 200 OK)
-      if (conversationsResponse.statusCode == 200) {
-        // Décoder le JSON de la réponse en liste dynamique
-        final List<dynamic> conversations = jsonDecode(conversationsResponse.body);
-        
-        // Filtrer les conversations actives (is_active == true)
-        final activeConversations = conversations.where((conv) => conv['is_active'] == true).toList();
-        
-        // Vérifier s'il existe des conversations actives
-        //“active” veut dire “encore utilisée ou visible pour l’utilisateur”
-        if (activeConversations.isNotEmpty) {
-          // Utiliser la conversation la plus récente (première dans la liste)
+      // 1. Récupérer les conversations existantes via AuthService
+      final conversations = await AuthService.getConversations(token);
+      
+      // Filtrer les conversations actives (is_active == true)
+      final activeConversations = conversations.where((conv) => conv['is_active'] == true).toList();
+      
+      if (activeConversations.isNotEmpty) {
+        // Utiliser la conversation la plus récente
+        setState(() {
+          currentConversationId = activeConversations.first['id'];
+        });
+      } else {
+        // Créer une nouvelle conversation via AuthService
+        final result = await AuthService.createConversation(
+          'Conversation avec l\'assistant',
+          token,
+        );
+        if (result['success'] == true) {
           setState(() {
-            // Mettre à jour l'ID de conversation actuelle
-            currentConversationId = activeConversations.first['id'];
+            currentConversationId = result['data']['id'];
           });
-        } else {
-          // Créer une nouvelle conversation si aucune n'est active
-          final createResponse = await http.post(
-            // URL de l'API pour créer une conversation
-            Uri.parse('${AuthService.baseUrl}/conversations/'),
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer $token',
-            },
-            // Corps de la requête avec le titre de la conversation
-            body: jsonEncode({
-              'title': 'Conversation avec l\'assistant'
-            }),
-          );
-
-          // Vérifier si la création a réussi (code 201 Created)
-          if (createResponse.statusCode == 201) {
-            // Décoder la réponse JSON de la nouvelle conversation
-            final newConversation = jsonDecode(createResponse.body);
-            setState(() {
-              // Mettre à jour l'ID de conversation avec celui de la nouvelle
-              currentConversationId = newConversation['id'];
-            });
-          }
         }
       }
       
@@ -125,7 +93,6 @@ class _AssistantScreenState extends State<AssistantScreen> {
       _addWelcomeMessage();
       
     } catch (e) {
-      // Capturer et afficher les erreurs éventuelles
       print("Erreur initialisation chat: $e");
       // En cas d'erreur, utiliser une conversation locale sans backend
       _addWelcomeMessage();
