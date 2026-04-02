@@ -409,11 +409,26 @@ def reset_password(data: ResetPassword, db: Session = Depends(get_db)):
 # ========================================
 @app.get("/vehicles")
 def get_vehicles(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from datetime import date as date_class
+    today = date_class.today()
     """
-    Récupère la liste de tous les véhicules avec l'information si chacun est en favori de l'utilisateur courant.
+    Récupère la liste de tous les véhicules.
     """
     # Récupère tous les véhicules
     vehicles_list = db.query(vehicles).all()
+    for v in vehicles_list:
+        active_now = db.query(Booking).filter(
+            Booking.car_id == v.id,
+            Booking.status == "Confirmée",
+            Booking.pickup_date <= today,
+            Booking.return_date >= today
+        ).first()
+        # Si une réservation est en cours aujourd'hui, on force isAvailable à False
+        if active_now:
+            v.isAvailable = False
+        else:
+            v.isAvailable = True
+    db.commit()
     # Récupère les IDs des favoris de l'utilisateur courant
     user_favorites = db.query(Favorite.car_id).filter(Favorite.user_id == current_user.id).all()
     favorite_ids = [fav.car_id for fav in user_favorites]
@@ -593,12 +608,6 @@ def create_booking(
         db.add(new_booking)
         db.commit()
         db.refresh(new_booking)
-        # Si la réservation commence aujourd'hui ou avant, marque la voiture comme non disponible
-        # Permet d’utiliser un alias(nom alternatif) "date_class" pour représenter la classe datetime.date et éviter les conflits de nom avec d’autres variables.
-        from datetime import date as date_class
-        if pickup_date <= date_class.today():
-            car.isAvailable = False
-            db.commit()
         return {
             "success": True,
             "message": "Réservation créée avec succès",
@@ -736,8 +745,12 @@ def update_booking_status(
                 if not other_active_bookings:
                     car.isAvailable = True
             elif status == "Confirmée":
-                if booking.pickup_date <= date_class.today():
+                # On vérifie si la location commence aujourd'hui ou est déjà en cours
+                if booking.pickup_date <= date_class.today()<= booking.return_date:
                     car.isAvailable = False
+            else:
+                # La location est dans le futur, la voiture reste dispo pour d'autres
+                car.isAvailable = True
         db.commit()
         return {
             "success": True,
